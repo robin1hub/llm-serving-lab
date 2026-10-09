@@ -8,7 +8,7 @@
 
 ## 环境与边界
 
-- GitHub 仓库计划：`robin1hub/llm-serving-lab`，默认私有，当前正在创建与首次推送。
+- GitHub 仓库： https://github.com/robin1hub/llm-serving-lab ，私有；主分支 `main`，已完成首次推送。Git 提交身份仅在本仓库配置，使用 GitHub noreply 邮箱。
 - Windows 工作区：`C:/Users/yh/Desktop/sim/llm-serving-lab`。
 - WSL2 路径：`/mnt/c/Users/yh/Desktop/sim/llm-serving-lab`。
 - 相邻 `router-simulator` 是师兄的项目，供参考；本步骤不修改它或已有环境。
