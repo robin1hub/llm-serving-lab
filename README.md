@@ -1,6 +1,6 @@
 # LLM Serving 学习实验
 
-目标是通过小段可读代码理解 serving 过程，并逐步探索 D 端压力下的调度。当前支持单请求和单 GPU 的多请求串行执行，没有真实模型计算。
+目标是通过小段可读代码理解 serving 过程，并逐步探索 D 端压力下的调度。当前支持单请求、串行排队和单 GPU Decode batching，没有真实模型计算。
 
 ## 在 WSL2 运行
 
@@ -82,5 +82,38 @@ B 在 A 执行过程中已经到达，但只能等待。等待 12−3=9ms，Pref
 3. B 的到达时间改为 0ms：按照输入顺序，A 仍先执行。
 
 理解这些结果后，下一步再实现 continuous batching：在轮次边界重新选请求，让多个请求参与同一轮 Decode。
+
+## 第三步：Decode batching 与动态进出
+
+运行 `python3 batch_demo.py`，使用与串行实验相同的 A/B 请求。
+
+本步规则：轮次之间调度；若有已到达但未 Prefill 的请求，先选最早的一个执行完整 Prefill。否则所有已 Prefill 且未完成的请求组成一个 Decode batch，一轮各生成一个 token。Prefill 与 Decode 在同一张 GPU 上轮流执行，没有混合 batch。
+
+教学假设：无容量限制；Decode 整轮固定 2ms，与成员数无关，不能用于推断真实 GPU 吞吐。持续到达的 Prefill 可能让 Decode 长时间等待，这是当前优先级的局限，第四步再比较其他规则。
+
+| GPU 执行时间 | 阶段 | batch 成员 | 完成时发生什么 |
+| --- | --- | --- | --- |
+| 0–8ms | Prefill | A | A 首 token，加入活跃集合 |
+| 8–12ms | Prefill | B | B 首 token，加入活跃集合；A 等待 |
+| 12–14ms | Decode | A、B | 各生成一个 token；B 完成退出 |
+| 14–16ms | Decode | A | A 完成退出 |
+
+这里的并行是同一轮 batch 内多个请求各前进一步，不是多线程：批处理时间只加一次。每个请求自身的 token 仍然逐个产生。只有到达且完成 Prefill 的请求可以进入 Decode。
+
+阅读 [batching_lab.py](batching_lab.py) 的 `simulate_batched()`：
+
+1. `pending` 是尚未开始 Prefill 的请求，包含未来才到达的请求；选取时必须检查到达时间。
+2. `active` 是已经产出首 token、还有输出未生成的请求。
+3. `members = tuple(active)` 固定本轮成员；执行中到达的新请求不能插入。
+4. 一次推进整轮时间，然后给每个成员记一个输出 token。
+5. 轮末移除完成的请求，下轮重新选批；新请求在 Prefill 完成后加入活跃集合。
+
+`_Progress` 是函数内部可变状态，`field(default_factory=list)` 为每个请求建立独立列表，防止共享记录。`BatchStep` 记录一轮 GPU 执行区间，最终 `BatchRun` 和请求结果仍不可变。事件日志仍按已知 workload 计算，未引入未来事件堆。输出长度只用于请求结束判断，不用于排序或优先级。
+
+示例同时打印串行和 batching 指标：A 的 token 时间从 8/10/12ms 变成 8/14/16ms，ITL 从 2/2ms 变成 6/2ms；B 的首 token 从 16ms 提前到 12ms。改善新请求 TTFT 的同时，A 的生成间隔变长。
+
+先尝试把 B 到达时间改为 9ms：它到达时 A 正在 8–10ms Decode，必须等到 10ms 才开始 Prefill。再尝试在 `requests` 中加入 C（13ms 到达，输入 1、输出 2），观察 C 怎样在后续轮次进入，B 怎样先退出。先手算再运行。
+
+验证：`python3 -m unittest -v`，包含 batch 成员变化、中途到达、单 token 输出和单请求兼容性。
 
 完整学习路线和阶段记录见 [LEARNING_LOG.md](LEARNING_LOG.md)，后续对话入口见 [HANDOFF.md](HANDOFF.md)，协作规范见 [AGENTS.md](AGENTS.md)。
