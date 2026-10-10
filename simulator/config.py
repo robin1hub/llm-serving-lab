@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Literal, cast
 
-from serving_lab import Request, Timing
+from .models import Request, Timing
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-"""单请求教学实验：用虚拟时间描述 Prefill 和逐 token Decode。"""
+"""当前模拟器的数据结构与校验。"""
 
 from dataclasses import dataclass
 import math
@@ -86,59 +86,18 @@ class Result:
         return self.token_times_ms[-1] - self.request.arrival_ms
 
 
-def simulate(
-    request: Request, timing: Timing, *, gpu_available_ms: float = 0.0
-) -> Result:
-    """GPU 可用且请求到达后才开始；开始后独占 GPU 直到完成。"""
-    _validate_time("gpu_available_ms", gpu_available_ms, allow_zero=True)
-    start_ms = max(request.arrival_ms, gpu_available_ms)
-    now_ms = start_ms
-    events = [
-        Event(request.arrival_ms, "请求到达"),
-        Event(start_ms, "开始 Prefill"),
-    ]
+@dataclass(frozen=True)
+class BatchStep:
+    """一轮 GPU 执行记录；成员一旦确定，本轮中途不会改变。"""
 
-    # Prefill 一次处理全部输入，并在完成时产出首 token。
-    now_ms += request.input_tokens * timing.prefill_ms_per_input_token
-    token_times = [now_ms]
-    events.append(Event(now_ms, "Prefill 完成，产出 token", token_index=1))
-
-    # 首 token 已经产生，剩余输出逐轮 Decode。
-    for token_index in range(2, request.output_tokens + 1):
-        now_ms += timing.decode_ms_per_step
-        token_times.append(now_ms)
-        events.append(Event(now_ms, "Decode 完成，产出 token", token_index))
-
-    events.append(Event(now_ms, "请求完成"))
-    return Result(request, tuple(events), tuple(token_times), start_ms)
+    start_ms: float
+    end_ms: float
+    phase: str
+    request_ids: tuple[str, ...]
 
 
-def simulate_serial(requests: tuple[Request, ...], timing: Timing) -> tuple[Result, ...]:
-    """按到达顺序串行执行；同时到达时保持输入顺序，不做抢占。"""
-    request_ids = [request.request_id for request in requests]
-    if len(set(request_ids)) != len(request_ids):
-        raise ValueError("request_id 必须唯一")
-    gpu_available_ms = 0.0
-    results = []
-    for request in sorted(requests, key=lambda item: item.arrival_ms):
-        result = simulate(request, timing, gpu_available_ms=gpu_available_ms)
-        results.append(result)
-        # 下一请求只能在上一请求生成结束后使用 GPU。
-        gpu_available_ms = result.token_times_ms[-1]
-    return tuple(results)
+@dataclass(frozen=True)
+class BatchRun:
+    results: tuple[Result, ...]
+    steps: tuple[BatchStep, ...]
 
-
-def main() -> None:
-    request = Request("A", arrival_ms=0.0, input_tokens=4, output_tokens=3)
-    result = simulate(request, Timing())
-    print("单请求实验（所有耗时均为教学假设）")
-    for event in result.events:
-        token = "" if event.token_index is None else f" #{event.token_index}"
-        print(f"{event.time_ms:5g} ms | {request.request_id} | {event.description}{token}")
-    print(f"首 token 延迟：{result.ttft_ms:g} ms")
-    print(f"相邻 token 间隔：{result.inter_token_intervals_ms} ms")
-    print(f"端到端延迟：{result.latency_ms:g} ms")
-
-
-if __name__ == "__main__":
-    main()

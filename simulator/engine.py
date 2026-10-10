@@ -1,12 +1,12 @@
-"""单卡离散事件实验；先读 EVENT_GUIDE.md，不必一次读懂全部代码。"""
+"""单卡离散事件实验；先读 docs/chapters/03-events.md，不必一次读懂全部代码。"""
 
 from collections import deque
 from dataclasses import dataclass, field
 import heapq
 from typing import Literal
 
-from batching_lab import BatchRun, BatchStep
-from serving_lab import Event, Request, Result, Timing
+from .models import BatchRun, BatchStep
+from .models import Event, Request, Result, Timing
 
 
 @dataclass(order=True, frozen=True)

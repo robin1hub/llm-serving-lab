@@ -1,11 +1,10 @@
-"""用轮次模型作为对照，核对事件驱动的边界和资源互斥。"""
+"""检查手算时间线、事件边界与单 GPU 资源互斥。"""
 
 import random
 import unittest
 
-from batching_lab import simulate_batched
-from event_lab import simulate_events
-from serving_lab import Request, Timing
+from simulator.engine import simulate_events
+from simulator.models import Request, Timing
 
 
 class EventTests(unittest.TestCase):
@@ -20,13 +19,21 @@ class EventTests(unittest.TestCase):
         for policy in ("prefill_first", "decode_first"):
             for requests in workloads:
                 with self.subTest(policy=policy, requests=requests):
-                    old = simulate_batched(requests, Timing(), policy=policy)
                     new = simulate_events(requests, Timing(), policy=policy).batch_run
-                    self.assertEqual(new.steps, old.steps)
-                    self.assertEqual(tuple((r.start_ms, r.token_times_ms) for r in new.results),
-                                     tuple((r.start_ms, r.token_times_ms) for r in old.results))
+                    self.assertEqual(len(new.results), len(requests))
+                    for result in new.results:
+                        self.assertEqual(len(result.token_times_ms), result.request.output_tokens)
+                        self.assertGreaterEqual(result.start_ms, result.request.arrival_ms)
+                        self.assertTrue(all(a < b for a, b in zip(result.token_times_ms, result.token_times_ms[1:])))
                     for earlier, later in zip(new.steps, new.steps[1:]):
                         self.assertLessEqual(earlier.end_ms, later.start_ms)
+
+    def test_hand_calculated_priority_results(self) -> None:
+        requests = (Request("A", 0, 4, 3), Request("B", 3, 2, 2))
+        for policy, expected in (("prefill_first", ((8, 14, 16), (12, 14))),
+                                 ("decode_first", ((8, 10, 12), (16, 18)))):
+            run = simulate_events(requests, Timing(), policy=policy).batch_run
+            self.assertEqual(tuple(r.token_times_ms for r in run.results), expected)
 
     def test_arrival_is_processed_while_gpu_busy(self) -> None:
         run = simulate_events((Request("A", 0, 4, 3), Request("B", 3, 2, 2)), Timing())

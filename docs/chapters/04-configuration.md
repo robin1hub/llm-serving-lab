@@ -12,7 +12,7 @@
                       终端摘要 + 结果 JSON
 ```
 
-configuration.py 只负责输入，event_lab.py 只负责执行，run_simulation.py 连接两者并保存输出。这样以后接 ShareGPT 或真实耗时表时，输入变化不必混入事件处理代码。
+simulator/config.py 只负责输入，simulator/engine.py 只负责执行，run_simulation.py 连接两者并保存输出。这样以后接 ShareGPT 或真实耗时表时，输入变化不必混入事件处理代码。
 
 ## 文件分工
 
@@ -27,7 +27,7 @@ configuration.py 只负责输入，event_lab.py 只负责执行，run_simulation
 cd /mnt/c/Users/yh/Desktop/sim/llm-serving-lab
 python3 run_simulation.py --config configs/basic.json --output output/prefill.json
 python3 run_simulation.py --config configs/decode_first.json --output output/decode.json
-python3 -m unittest -q
+python3 -m unittest discover -s tests -q
 ```
 
 只有 --config 必填，--output 默认为 output/result.json。结果目录不存在时自动创建。CLI 的配置路径和输出路径相对当前工作目录；配置内 workload.path 则相对配置文件所在目录。basic.json 中 ../workloads/two_requests.json 表示从 configs/ 回到项目目录，再进入 workloads/。
@@ -61,10 +61,10 @@ timing_source 明确为 teaching_assumption，不能把结果当成 4090 实测�
 
 复制 basic.json 成自己的配置，或者只改 workloads/two_requests.json 中 B 的 arrival_ms 为 9。先预测 B 何时开始，再运行查看 steps。要注意两份配置引用同一负载，改这个负载会同时影响它们；需要独立实验时复制负载并更新路径。
 
-无需读懂全部加载代码。先看配置、负载和运行结果；第二遍看 configuration.py 的三个重点，最后看 run_simulation.py 的“读入 → 执行 → 保存”。
+无需读懂全部加载代码。先看配置、负载和运行结果；第二遍看 simulator/config.py 的三个重点，最后看 run_simulation.py 的“读入 → 执行 → 保存”。
 
 ## 后续边界
 
 显存配置需要先实现权重/KV 占用和资源不足时的处理；batch 上限需要改变选批逻辑；ShareGPT 需要真实 tokenizer 与到达计划；4090 校准需要实测耗时。当前不接受这些未实现字段。
 
-验证：22 个测试在 WSL2 通过，包括两策略 CLI 输出、从其他目录运行、未知/缺失字段、重复 ID、非法长度、缺文件和非法 JSON。
+整理前验证：22 个测试在 WSL2 通过；当前测试结果见交接记录，包括两策略 CLI 输出、从其他目录运行、未知/缺失字段、重复 ID、非法长度、缺文件和非法 JSON。

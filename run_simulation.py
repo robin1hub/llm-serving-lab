@@ -5,8 +5,8 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 
-from configuration import load_experiment
-from event_lab import simulate_events
+from simulator.config import load_experiment
+from simulator.engine import simulate_events
 
 
 def main() -> None:

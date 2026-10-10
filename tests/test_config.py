@@ -7,10 +7,10 @@ import sys
 import tempfile
 import unittest
 
-from configuration import load_experiment
+from simulator.config import load_experiment
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class ConfigurationTests(unittest.TestCase):
