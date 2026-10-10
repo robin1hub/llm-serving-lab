@@ -1,5 +1,7 @@
 # LLM Serving 学习实验
 
+现在可用独立配置运行：`python3 run_simulation.py --config configs/basic.json`。配置、负载与结果结构的讲解见 [CONFIG_GUIDE.md](CONFIG_GUIDE.md)，事件机制讲解见 [EVENT_GUIDE.md](EVENT_GUIDE.md)。
+
 最新一步是单卡事件驱动，运行 `python3 event_demo.py`；设计讲解见 [EVENT_GUIDE.md](EVENT_GUIDE.md)。原轮次版保留用于对照，以下学习步骤仍可单独运行。
 
 目标是通过小段可读代码理解 serving 过程，并逐步探索 D 端压力下的调度。当前支持单请求、串行排队和单 GPU Decode batching，没有真实模型计算。

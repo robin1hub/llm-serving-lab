@@ -1,0 +1,5 @@
+{
+  "workload": {"path": "../workloads/two_requests.json"},
+  "scheduler": {"policy": "prefill_first"},
+  "timing": {"prefill_ms_per_input_token": 2.0, "decode_ms_per_step": 2.0}
+}

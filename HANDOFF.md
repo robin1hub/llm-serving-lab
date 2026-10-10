@@ -38,6 +38,10 @@
 
 ## 下一步
 
+当前最新实现是配置驱动入口：configuration.py 加载并校验 configs/*.json 和 workloads/*.json，run_simulation.py 调用原事件内核并输出结果 JSON。basic/decode_first 两份配置共用 two_requests 负载，字段只含已有策略和教学耗时。workload 路径相对配置目录，输出路径相对 cwd，同名输出会覆盖。CONFIG_GUIDE.md 同步设计、字段、运行和练习；22 个测试在 WSL2 通过。已生成 output/result.json，output/ 被 Git 忽略。
+
+当前停在配置阅读和改参数实验。用户希望可配置负载、显存和速度：本步仅已实现机制，未加入虚假的显存或 4090 字段。接下来讨论 batch 上限、资源机制或原路线的小步扩展，不直接部署服务器。原有示例保留。
+
 最新状态：用户担心直接接 vLLM 校准跨度太大，决定先做单卡事件队列，保持现有 batch 规则。已新增 event_lab.py、event_demo.py、test_event_lab.py 和 EVENT_GUIDE.md。事件类型为 arrival/complete/wakeup，单最小堆排序；waiting 仅包含已到达请求；busy 防止同 GPU 重叠，完成后更新 token 再唤醒。WSL2 下 19 个测试通过，默认结果及两种策略与轮次版相同。
 
 用户询问是否需要 C++：当前继续 Python 以便教学，未迁移。首要目标仍是解释设计与状态，不要求读懂完整代码。当前停在事件机制阅读；以后依次学习 token 预算、分块、混合 batch、KV 容量，之后才接真实数据集与单卡 4090 校准。不要直接启动服务器服务或采集。
