@@ -1,5 +1,7 @@
 # LLM Serving 学习实验
 
+最新一步是单卡事件驱动，运行 `python3 event_demo.py`；设计讲解见 [EVENT_GUIDE.md](EVENT_GUIDE.md)。原轮次版保留用于对照，以下学习步骤仍可单独运行。
+
 目标是通过小段可读代码理解 serving 过程，并逐步探索 D 端压力下的调度。当前支持单请求、串行排队和单 GPU Decode batching，没有真实模型计算。
 
 ## 在 WSL2 运行

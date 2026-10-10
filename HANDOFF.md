@@ -38,6 +38,10 @@
 
 ## 下一步
 
+最新状态：用户担心直接接 vLLM 校准跨度太大，决定先做单卡事件队列，保持现有 batch 规则。已新增 event_lab.py、event_demo.py、test_event_lab.py 和 EVENT_GUIDE.md。事件类型为 arrival/complete/wakeup，单最小堆排序；waiting 仅包含已到达请求；busy 防止同 GPU 重叠，完成后更新 token 再唤醒。WSL2 下 19 个测试通过，默认结果及两种策略与轮次版相同。
+
+用户询问是否需要 C++：当前继续 Python 以便教学，未迁移。首要目标仍是解释设计与状态，不要求读懂完整代码。当前停在事件机制阅读；以后依次学习 token 预算、分块、混合 batch、KV 容量，之后才接真实数据集与单卡 4090 校准。不要直接启动服务器服务或采集。
+
 第四步已实现：`simulate_batched(..., policy="decode_first")` 和 `priority_demo.py` 对比默认 Prefill 优先与严格 Decode 优先，16 个测试通过。A/B token 分别是 8/14/16、12/14（Prefill 优先），8/10/12、16/18（严格 Decode 优先）。后者在当前单请求 Prefill 模型中退化为串行。
 
 最新学习状态：用户已经确认理解第三步机制，但代码基础较弱，不要求读懂完整函数；优先讲状态、结果和少量语句。当前用户等待第四步对比结果，先讨论 B TTFT 与 A ITL 的取舍，确认理解后才开始第五步 Chunked prefill。以下旧记录保留作为过程背景。
