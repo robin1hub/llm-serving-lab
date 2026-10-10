@@ -1,5 +1,9 @@
 """第三步：在轮次边界组 Decode batch，使用 Prefill 优先的教学规则。"""
 
+# 阅读导航：先跳到 simulate_batched()，按【重点 1】到【重点 5】阅读。
+# 第一遍只追踪 pending、active、members、now_ms，日志 append 可以略读。
+# 下方数据类和函数末尾的结果封装可以第二遍再看。
+
 from dataclasses import dataclass, field
 
 from serving_lab import Event, Request, Result, Timing
@@ -40,6 +44,9 @@ def simulate_batched(requests: tuple[Request, ...], timing: Timing) -> BatchRun:
     if len({request.request_id for request in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
 
+    # 【重点 1：请求放在哪里？】
+    # pending：还没做 Prefill（可能尚未到达）；active：已 Prefill、还需 Decode。
+    # 请求流向是 pending → active → 完成退出；只输出一个 token 时跳过 active。
     # 稳定排序保证同时到达时遵循输入顺序。
     pending = [
         _Progress(request, events=[Event(request.arrival_ms, "请求到达")])
@@ -50,11 +57,15 @@ def simulate_batched(requests: tuple[Request, ...], timing: Timing) -> BatchRun:
     steps: list[BatchStep] = []
     now_ms = 0.0
 
+    # 【重点 2：什么时候做调度？】
+    # 每次循环是一轮 GPU 执行；只有上一轮结束后才能再次选择。
     while pending or active:
         # 无可执行请求时直接跳到下一次到达，不做真实等待。
         if not active and pending[0].request.arrival_ms > now_ms:
             now_ms = pending[0].request.arrival_ms
 
+        # 【重点 3：新请求怎样进入？为什么已有请求会等？】
+        # 有已到达的 pending 就先做 Prefill；否则才走下面的 Decode 分支。
         if pending and pending[0].request.arrival_ms <= now_ms:
             # 本轮采用 Prefill 优先；已有 Decode 请求在这段时间暂停。
             progress = pending.pop(0)
@@ -69,10 +80,12 @@ def simulate_batched(requests: tuple[Request, ...], timing: Timing) -> BatchRun:
                 # 首 token 就是全部输出，不应加入 Decode 再生成一次。
                 progress.events.append(Event(now_ms, "请求完成"))
             else:
+                # 进入 active 只表示下一轮可以参与 Decode，不是立刻执行。
                 active.append(progress)
                 progress.events.append(Event(now_ms, "加入活跃 Decode 集合"))
             continue
 
+        # 【重点 4：真正组 batch，并让所有成员同轮前进】
         # 在轮次开始时冻结成员：本轮执行期间到达的请求只能下轮被考虑。
         members = tuple(active)
         end_ms = now_ms + timing.decode_ms_per_step
@@ -88,11 +101,13 @@ def simulate_batched(requests: tuple[Request, ...], timing: Timing) -> BatchRun:
             if token_index == progress.request.output_tokens:
                 progress.events.append(Event(now_ms, "请求完成，退出活跃 Decode 集合"))
 
+        # 【重点 5：谁退出？下一轮为什么可以换成员？】
         # 本轮完成后重建活跃集合；下一轮的 batch 可以缩小或加入新请求。
         active = [
             item for item in active if len(item.token_times) < item.request.output_tokens
         ]
 
+    # 【第二遍再看：结果封装】这里只保存执行记录，不再做调度。
     results = []
     for progress in all_progress:
         assert progress.start_ms is not None  # 退出循环意味着每个请求均已执行完毕。
