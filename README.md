@@ -17,7 +17,7 @@ python3 serial_demo.py
 python3 -m unittest -v
 ```
 
-私有仓库需要具有访问权限的 GitHub 登录。当前本机 WSL2 的运行路径如下：
+仓库已公开，可以直接克隆。当前本机 WSL2 的运行路径如下：
 
 ```bash
 cd /mnt/c/Users/yh/Desktop/sim/llm-serving-lab
@@ -136,3 +136,4 @@ B 在 A 执行过程中已经到达，但只能等待。等待 12−3=9ms，Pref
 代码只需重点读 batching_lab.py 的【第四步重点】：`prefill_ready` 表示有已到达的新请求；`choose_prefill` 表示本轮是否选择处理它。`not active` 表示没有待生成的活跃请求。下面的 Prefill 和 Decode 执行代码均复用原实现。
 
 本步先看结果并解释谁承担等待，不要求完整理解 Python 语法。用户理解后再进入第五步：Prefill 分块，逐步探索避免两种极端的方法。固定 Decode 耗时和无容量限制仍然是教学假设。
+

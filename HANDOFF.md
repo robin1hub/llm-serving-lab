@@ -8,7 +8,7 @@
 
 ## 环境与边界
 
-- GitHub 仓库： https://github.com/robin1hub/llm-serving-lab ，私有；主分支 `main`，已完成首次推送。Git 提交身份仅在本仓库配置，使用 GitHub noreply 邮箱。
+- GitHub 仓库： https://github.com/robin1hub/llm-serving-lab ，公开；主分支 `main`，已完成首次推送。Git 提交身份仅在本仓库配置，使用 GitHub noreply 邮箱。
 - Windows 工作区：`C:/Users/yh/Desktop/sim/llm-serving-lab`。
 - WSL2 路径：`/mnt/c/Users/yh/Desktop/sim/llm-serving-lab`。
 - 相邻 `router-simulator` 是师兄的项目，供参考；本步骤不修改它或已有环境。
@@ -55,3 +55,4 @@
 用户已确认理解单请求和串行排队；第三步 Decode batching 已实现，等待用户阅读和实验确认理解。用户明确要求写代码时加注释，已记录 AGENTS.md。先讨论成员固定、同轮推进和动态进出，尝试 B 在 9ms 到达或增加 C；之后才进入第四步 P/D 优先级对比。完整八步路线及学习记录见 LEARNING_LOG.md。
 
 后续对话可让助手先读本目录的 AGENTS.md、README.md、HANDOFF.md 和代码，检查实际现状后继续，不重复创建项目。
+
