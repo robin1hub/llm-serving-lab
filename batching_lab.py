@@ -1,10 +1,11 @@
-"""第三步：在轮次边界组 Decode batch，使用 Prefill 优先的教学规则。"""
+"""第三、四步：轮次边界组 Decode batch，并比较两种阶段优先级。"""
 
 # 阅读导航：先跳到 simulate_batched()，按【重点 1】到【重点 5】阅读。
 # 第一遍只追踪 pending、active、members、now_ms，日志 append 可以略读。
 # 下方数据类和函数末尾的结果封装可以第二遍再看。
 
 from dataclasses import dataclass, field
+from typing import Literal
 
 from serving_lab import Event, Request, Result, Timing
 
@@ -35,12 +36,19 @@ class _Progress:
     events: list[Event] = field(default_factory=list)
 
 
-def simulate_batched(requests: tuple[Request, ...], timing: Timing) -> BatchRun:
-    """单 GPU；单请求完整 Prefill 优先，否则所有活跃请求一起 Decode。
+def simulate_batched(
+    requests: tuple[Request, ...],
+    timing: Timing,
+    *,
+    policy: Literal["prefill_first", "decode_first"] = "prefill_first",
+) -> BatchRun:
+    """单 GPU；按指定优先级选择完整 Prefill 或活跃请求的 Decode。
 
     Decode batch 整轮耗时固定，不随成员数量变化，仅用于理解流程。
     没有容量限制、混合 P/D batch 或 Prefill 分块。
     """
+    if policy not in ("prefill_first", "decode_first"):
+        raise ValueError("policy 必须是 prefill_first 或 decode_first")
     if len({request.request_id for request in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
 
@@ -65,9 +73,13 @@ def simulate_batched(requests: tuple[Request, ...], timing: Timing) -> BatchRun:
             now_ms = pending[0].request.arrival_ms
 
         # 【重点 3：新请求怎样进入？为什么已有请求会等？】
-        # 有已到达的 pending 就先做 Prefill；否则才走下面的 Decode 分支。
-        if pending and pending[0].request.arrival_ms <= now_ms:
-            # 本轮采用 Prefill 优先；已有 Decode 请求在这段时间暂停。
+        # 【第四步重点：唯一改变的调度规则】先判断 Prefill 是否已经就绪。
+        prefill_ready = bool(pending) and pending[0].request.arrival_ms <= now_ms
+        # Prefill 优先：就绪即执行；严格 Decode 优先：还必须没有活跃 Decode。
+        # not active 表示活跃集合为空。无需改下面的组批和 token 生成逻辑。
+        choose_prefill = prefill_ready and (policy == "prefill_first" or not active)
+        if choose_prefill:
+            # 一旦开始完整 Prefill，本轮不被中断；已有 Decode 在这段时间等待。
             progress = pending.pop(0)
             progress.start_ms = now_ms
             progress.events.append(Event(now_ms, "开始 Prefill"))

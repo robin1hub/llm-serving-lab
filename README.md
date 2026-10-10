@@ -117,3 +117,18 @@ B 在 A 执行过程中已经到达，但只能等待。等待 12−3=9ms，Pref
 验证：`python3 -m unittest -v`，包含 batch 成员变化、中途到达、单 token 输出和单请求兼容性。
 
 完整学习路线和阶段记录见 [LEARNING_LOG.md](LEARNING_LOG.md)，后续对话入口见 [HANDOFF.md](HANDOFF.md)，协作规范见 [AGENTS.md](AGENTS.md)。
+
+## 第四步：Prefill / Decode 优先级
+
+运行 `python3 priority_demo.py`。请求、耗时和组批逻辑保持相同，只改变轮次边界选择阶段的规则。`simulate_batched()` 默认仍是 `prefill_first`，已有示例保持原行为；传入 `policy="decode_first"` 使用严格 Decode 优先。
+
+| 规则 | 8ms 的选择 | A token 时间 | B token 时间 | A 的 ITL | B 的 TTFT |
+| --- | --- | --- | --- | --- | --- |
+| Prefill 优先 | 先处理 B 输入 | 8/14/16ms | 12/14ms | 6/2ms | 9ms |
+| 严格 Decode 优先 | 继续生成 A | 8/10/12ms | 16/18ms | 2/2ms | 13ms |
+
+第一种缩短 B 的首 token 等待，但让 A 暂停生成；第二种保护 A 的生成间隔，但 B 等到 A 完成。当前严格 Decode 优先会排空活跃集合才接纳下一个请求，加上每轮只处理一个 Prefill，因此退化为串行、无法形成多请求 Decode batch。这是刻意比较的极端教学规则，不代表所有实际 decode-first 算法。
+
+代码只需重点读 batching_lab.py 的【第四步重点】：`prefill_ready` 表示有已到达的新请求；`choose_prefill` 表示本轮是否选择处理它。`not active` 表示没有待生成的活跃请求。下面的 Prefill 和 Decode 执行代码均复用原实现。
+
+本步先看结果并解释谁承担等待，不要求完整理解 Python 语法。用户理解后再进入第五步：Prefill 分块，逐步探索避免两种极端的方法。固定 Decode 耗时和无容量限制仍然是教学假设。
