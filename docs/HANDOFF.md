@@ -21,6 +21,10 @@
 
 ## 接下来
 
+最新阶段完成结果统计：simulator/metrics.py 只读 BatchRun，summary 写入结果并打印。请求级 TTFT/总延迟、按所有间隔的 ITL 输出 count/mean/P50/P95（最近秩）；吞吐窗口从最早到达到最后完成，含空闲。空样本 null。第 6 章有定义与手算。两份 ShareGPT 配置同负载对比：Prefill 优先平均 TTFT 7543.74ms、ITL 46.128ms、输出吞吐 241.232 token/s；严格 Decode 优先为 22425.36ms、2ms、196.807 token/s。仍未校准。
+
+本次标准库环境测试 20 个中 18 通过、2 分词集成跳过；两策略均完成 100 请求、23977 输出 token。下一步先理解摘要和等待取舍，再加 batch 预算和简单 KV 容量。完整输出在 output/sharegpt.json 与 output/sharegpt_decode_first.json（不提交）。
+
 最新阶段：用户同意先接 ShareGPT、直接使用分词、本地执行。prepare_workload.py + configs/prepare_sharegpt.json 流式读相邻项目 ShareGPT，取前 100 个有效单轮请求、输入 chat template、输出参考文本不含 EOS，过滤 4096/1024 上限而不截断。first_valid 不做随机抽样，seed 仅控制 poisson 到达。支持 fixed/poisson。数据写 workloads/generated/，不覆盖已有目录；manifest 记录源/分词校验和、模板和统计。运行侧核对 manifest 并保存到结果。
 
 本地 tokenizer 仅从服务器复制三份 JSON 到 assets/tokenizers/qwen2.5-7b-instruct（不含模型权重）。项目 WSL2 .venv 用 /root/.local/bin/uv 安装 requirements-data.txt，默认 python 缺 ensurepip。未安装全局依赖。事件模拟仍可用系统 python3。完整讲解见第 5 章。

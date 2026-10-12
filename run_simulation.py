@@ -7,6 +7,7 @@ from pathlib import Path
 
 from simulator.config import load_experiment
 from simulator.engine import simulate_events
+from simulator.metrics import print_summary, summarize
 
 
 def main() -> None:
@@ -20,6 +21,7 @@ def main() -> None:
         # 【重点 1】文件转为请求对象；事件内核继续使用原来的函数。
         experiment = load_experiment(args.config)
         run = simulate_events(experiment.requests, experiment.timing, policy=experiment.policy)
+        summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
             "schema_version": 1,
@@ -29,6 +31,7 @@ def main() -> None:
             "workload_metadata": experiment.workload_metadata,
             "policy": experiment.policy,
             "timing": asdict(experiment.timing),
+            "summary": summary,
             "requests": [
                 {"request": asdict(result.request), "start_ms": result.start_ms,
                  "waiting_ms": result.waiting_ms, "token_times_ms": result.token_times_ms,
@@ -49,7 +52,7 @@ def main() -> None:
     for result in (() if args.summary else run.batch_run.results):
         print(f"{result.request.request_id}: TTFT {result.ttft_ms:g}ms，"
               f"ITL {result.inter_token_intervals_ms}ms，总延迟 {result.latency_ms:g}ms")
-    print(f"已完成 {len(run.batch_run.results)} 个请求，执行 {len(run.batch_run.steps)} 轮")
+    print_summary(summary)
     print(f"结果已保存：{args.output.resolve()}（教学耗时，未校准）")
 
 

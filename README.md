@@ -8,6 +8,7 @@
 run_simulation.py       唯一运行入口
 prepare_workload.py     离线数据准备入口
 simulator/             models.py 数据结构、config.py 配置、engine.py 事件内核
+                       metrics.py 结果汇总
 configs/               实验配置
 workloads/             请求数据
  tests/                当前实现的测试
@@ -37,6 +38,7 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 3. [事件队列](docs/chapters/03-events.md)：到达、唤醒、完成。
 4. [配置实验](docs/chapters/04-configuration.md)：选择负载、策略和耗时。
 5. [ShareGPT 负载](docs/chapters/05-sharegpt.md)：真实分词、长度过滤和到达计划。
+6. [结果统计](docs/chapters/06-metrics.md)：分位数、吞吐口径与策略对照。
 
 现在主要阅读第 3、4 章，先看结果再看少量代码。旧示例代码可通过 Git 历史查看，当前目录不再保留多套引擎。
 

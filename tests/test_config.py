@@ -28,6 +28,8 @@ class ConfigurationTests(unittest.TestCase):
                 report = json.loads(output.read_text(encoding="utf-8"))
                 self.assertEqual(report["requests"][0]["token_times_ms"], expected)
                 self.assertEqual(report["timing_source"], "teaching_assumption")
+                self.assertEqual(report["summary"]["completed_requests"], 2)
+                self.assertEqual(report["summary"]["total_output_tokens"], 5)
 
     def test_rejects_invalid_config_and_workload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
