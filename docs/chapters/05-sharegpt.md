@@ -14,6 +14,44 @@ ShareGPT 文本 → 提取第一轮问答 → Qwen tokenizer → 长度 + 到达
 
 这是师兄原始 loader、离线 tokenizer 和 arrival plan 流程的简化版。事件内核没有改变。真实数据长度不等于真实计算耗时，结果仍标记 teaching_assumption。
 
+## 为什么分成准备与执行两步
+
+分词属于输入准备，事件内核只需要长度和到达时间。将二者分开有三个目的：换策略不重复分词、两策略使用完全相同的请求、基础模拟不依赖 transformers。真实 tokenizer 的导入发生在 ChatTokenizer 初始化内部，ijson 的导入发生在读取函数内部；仅运行模拟不会加载它们。
+
+当前只保存 token 数，不保存 token ID。因为尚未模拟 prefix 匹配或模型内容，长度已经足够；以后要研究前缀复用时，才需要扩展数据结构保存真实 ID。
+
+## 实现职责：从哪个函数看起
+
+| 文件 / 函数 | 输入 | 输出与职责 |
+| --- | --- | --- |
+| prepare_workload.py / main | 准备配置路径 | 校验配置、组织分词、生成 manifest、发布目录 |
+| dataset.py / iter_sharegpt | 原始 JSON 路径 | 流式逐条给出对象，不整表加载 |
+| dataset.py / first_pair | 一条对象 | 第一组用户/助手文本，或 None 表示不支持 |
+| dataset.py / ChatTokenizer.lengths | 用户文本、参考回答 | 输入/输出 token 数 |
+| dataset.py / prepare_requests | 记录迭代器、分词器、过滤与到达参数 | 请求列表和准备统计 |
+| config.py / load_experiment | 模拟配置 | 加载标准请求、检查 manifest 是否匹配 |
+
+LengthTokenizer 是一个接口约定：只需要 lengths(prompt, answer)。真实实现使用 Qwen，单元测试用小型替身。这样过滤和到达逻辑可以独立测试，另有本地真实 tokenizer 集成测试检查模板开销。
+
+prepare_requests 按“提取问答 → 分词 → 检查长度 → 生成到达时间 → 创建 Request”顺序处理。无效记录不会消耗一个到达间隔；只有接受的请求进入模拟负载。request_id 使用源文件行序号，例如 sharegpt-000006，因此跳过记录不会使后续 ID 改成另一条记录。
+
+## 分词代码如何对应设计
+
+```python
+prompt_ids = tokenizer.apply_chat_template(
+    [{"role": "user", "content": prompt}],
+    tokenize=True,
+    add_generation_prompt=True,
+)
+answer_ids = tokenizer.encode(answer, add_special_tokens=False)
+input_tokens = len(prompt_ids)
+output_tokens = len(answer_ids)
+```
+
+第一步让输入符合该模型的对话格式，第二步只计参考回答文本。len 数的是 token ID 的数量，不是字符、单词或字节。分词器不运行神经网络，不预测耗时，也不生成答案。
+
+output_tokens 是离线规定的模拟终止长度；调度器不能据此优先挑真实短输出。原事件内核仅在判断该请求是否完成时使用它。
+
 ## 准备配置与模拟配置分开
 
 - configs/prepare_sharegpt.json：原始文件、tokenizer 目录、请求数、长度限制、到达方式和输出目录。
@@ -67,6 +105,10 @@ python3 run_simulation.py --config configs/sharegpt.json --summary --output outp
 ## 文件与可追溯性
 
 requests.json 只包含稳定 request_id、arrival_ms、input_tokens、output_tokens，无原始文本。requests.manifest.json 保存源文件校验和、tokenizer 文件校验和、模板、依赖版本、实际选中的源行、准备参数、跳过统计和长度分布。
+
+数据结构可以理解为：requests.json 是“执行用的题目”，manifest 是“题目如何制作的说明”。prepare_workload.py 先在同一父目录的临时目录写完两份文件，再 rename 发布目标目录，避免中途失败留下看似完整的负载；已存在的目标目录直接拒绝覆盖。
+
+manifest 的 model_id 是配置中的说明字符串，不会远程解析模型版本。身份核对实际依靠本地 JSON 文件校验和及保存的模板。运行侧核对 requests_sha256 和 selected_count，不会再次读取原始 ShareGPT 或重新分词。
 
 运行时发现同名 manifest 会核对请求文件校验和和数量，并把说明复制进结果。如果手工修改生成请求，旧 manifest 会失配；应重新准备而非继续沿用旧说明。已有小型人工负载没有 manifest 也可照常运行。
 

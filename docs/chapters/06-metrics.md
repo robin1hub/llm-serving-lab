@@ -2,6 +2,47 @@
 
 统计只读取已完成的 BatchRun，不改变调度。终端和结果 JSON 的 summary 来自同一模块 simulator/metrics.py。--summary 隐藏详细终端打印，完整请求和事件记录仍保存。
 
+## 设计：先记录事实，再从事实算指标
+
+事件内核记录每个 token 什么时候产生，统计模块事后计算，不在事件处理过程中维护另一套指标状态。这样指标可以从结果记录核对，也不会因为修改统计方式而影响请求执行。
+
+```text
+engine.py → BatchRun（请求结果、GPU 执行区间）
+                    ↓
+         metrics.summarize() → summary 字典
+                              ├→ JSON 保存完整精度
+                              └→ print_summary() 终端显示三位小数
+```
+
+本版统计对象全部是已完成请求，没有失败、取消或运行截止机制。将来加入这些机制，需要补充输入请求数、失败数、未完成数及窗口规则，不能把当前 completed_requests 直接当所有提交请求数。
+
+## 实现职责
+
+| 函数 / 类型 | 负责什么 |
+| --- | --- |
+| models.py / Result 的属性 | 单请求 TTFT、ITL、等待和端到端延迟 |
+| metrics.py / distribution | 数值样本的 count、mean、P50、P95，处理无样本 |
+| metrics.py / summarize | 汇总请求、间隔、token 数与统计窗口，计算吞吐 |
+| metrics.py / print_summary | 格式化展示，不重新计算指标 |
+| run_simulation.py / main | 模拟结束后调用 summarize，将同一摘要写文件并打印 |
+
+summary 是可序列化字典，JSON 顶层字段仍保留原来的 requests、steps、trace。没有另建第二个统计入口，所有配置都自动获得同一口径。
+
+## 从记录算到数字
+
+对每个请求，token_times_ms[0] 是首 token，最后一项是完成时间。相邻两项相减形成 ITL。输入总数来自请求输入参数，输出总数来自实际 token 时间记录数量，而非盲目相加目标输出长度。
+
+```python
+intervals = tuple(
+    gap
+    for result in run.results
+    for gap in result.inter_token_intervals_ms
+)
+output_tokens = sum(len(result.token_times_ms) for result in run.results)
+```
+
+第一段相当于“逐个打开请求的间隔列表，再合并成一个大列表”。没有间隔的请求贡献零个样本。P95 在排序后取 ceil(0.95*n)-1 下标，减一是因为 Python 从 0 编号。窗口 duration_ms 除以 1000 换成秒，再用请求数或输出 token 数除以秒数。
+
 ## 统计口径
 
 - 完成请求数、输入 token 总数、实际输出 token 总数（包含首 token）。
@@ -45,3 +86,9 @@ Prefill 优先的 ITL 平均值大于 P95，是少量特别长的间隔拉高平
 A/B 小例子：TTFT [8,9] 平均 8.5ms；ITL [6,2,2] 平均 10/3ms；窗口 16ms、输出 5 token，吞吐 312.5 token/s。这些数字与空负载、单输出、空闲间隙均有测试。
 
 系统 Python 验证：20 个测试中 18 个通过，2 个分词集成测试因未安装数据依赖跳过；两策略真实 ShareGPT 模拟完整运行。项目 .venv 的真实分词在上一阶段已验证，本次不改变分词和事件行为。
+
+## 哪些检查保证口径正确
+
+tests/test_metrics.py 用手算 A/B 案例核对 token 总数、TTFT、间隔权重、分位数和毫秒转秒。另测空负载的 null、单输出无 ITL，以及 100ms 才到达的请求不把前 100ms 算入窗口。tests/test_config.py 检查运行入口确实将 summary 写入 JSON。
+
+数据准备的 length_statistics 只描述输入/参考输出长度；本章 summary 描述模拟执行延迟和吞吐。两种统计处于不同阶段，不能用平均输出长度代替实际输出吞吐。

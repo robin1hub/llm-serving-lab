@@ -8,7 +8,7 @@
 
 - 唯一入口 run_simulation.py；simulator/models.py 保存不可变数据结构，config.py 严格加载 JSON，engine.py 保存事件循环。
 - configs/ 选择 workload、P/D 策略和教学耗时；workloads/ 是人工 token 长度请求；结果保存到 output/。
-- docs/chapters/ 按四章学习；docs/LEARNING_LOG.md 保留历史过程。
+- docs/chapters/ 按六章学习；第 5 章分词/负载，第 6 章结果统计；docs/LEARNING_LOG.md 保留历史过程。
 - 单 GPU、完整单请求 Prefill、所有活跃请求同轮 Decode。支持 Prefill 优先和严格 Decode 优先，后者当前退化为串行。
 - heapq 按时间、事件优先级、序号排序。到达只排队，唤醒启动并注册完成，完成才产生 token。waiting 不包含未来请求，busy 防止重叠。
 - ShareGPT 单轮数据准备已接入，使用本地 Qwen2.5-7B-Instruct tokenizer；没有真实模型计算、显存容量、混合 batch 或校准。未改师兄项目或环境。
@@ -20,6 +20,8 @@
 默认 Prefill 优先 A token 时间 8/14/16ms、B 为 12/14ms；严格 Decode 优先 A 为 8/10/12ms、B 为 16/18ms。配置驱动结果保持一致。
 
 ## 接下来
+
+2026-10-12 文档补全：按用户要求，第 5、6 章补入设计取舍、逐函数职责、数据结构、关键代码及测试映射。说明离线长度与模型生成的区别、token ID 未保存的边界、manifest 发布和核对、只读结果统计、间隔权重及未来未完成请求口径。仅文档改动，无新机制；当前让用户优先学习这两章，之后讨论资源限制。
 
 最新阶段完成结果统计：simulator/metrics.py 只读 BatchRun，summary 写入结果并打印。请求级 TTFT/总延迟、按所有间隔的 ITL 输出 count/mean/P50/P95（最近秩）；吞吐窗口从最早到达到最后完成，含空闲。空样本 null。第 6 章有定义与手算。两份 ShareGPT 配置同负载对比：Prefill 优先平均 TTFT 7543.74ms、ITL 46.128ms、输出吞吐 241.232 token/s；严格 Decode 优先为 22425.36ms、2ms、196.807 token/s。仍未校准。
 
