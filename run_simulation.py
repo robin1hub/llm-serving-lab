@@ -12,6 +12,7 @@ from simulator.engine import simulate_events
 def main() -> None:
     parser = argparse.ArgumentParser(description="单卡教学模拟器（耗时尚未校准）")
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--summary", action="store_true", help="只打印摘要，完整轨迹仍写入结果文件")
     parser.add_argument("--output", type=Path, default=Path("output/result.json"),
                         help="结果文件，默认 output/result.json；相对当前工作目录")
     args = parser.parse_args()
@@ -25,6 +26,7 @@ def main() -> None:
             "timing_source": "teaching_assumption",
             "config_path": str(experiment.config_path),
             "workload_path": str(experiment.workload_path),
+            "workload_metadata": experiment.workload_metadata,
             "policy": experiment.policy,
             "timing": asdict(experiment.timing),
             "requests": [
@@ -42,11 +44,12 @@ def main() -> None:
                                + "\n", encoding="utf-8")
     except (ValueError, OSError) as error:
         parser.exit(2, f"错误：{error}\n")
-    for step in run.batch_run.steps:
+    for step in (() if args.summary else run.batch_run.steps):
         print(f"{step.start_ms:g}–{step.end_ms:g}ms {step.phase} {list(step.request_ids)}")
-    for result in run.batch_run.results:
+    for result in (() if args.summary else run.batch_run.results):
         print(f"{result.request.request_id}: TTFT {result.ttft_ms:g}ms，"
               f"ITL {result.inter_token_intervals_ms}ms，总延迟 {result.latency_ms:g}ms")
+    print(f"已完成 {len(run.batch_run.results)} 个请求，执行 {len(run.batch_run.steps)} 轮")
     print(f"结果已保存：{args.output.resolve()}（教学耗时，未校准）")
 
 

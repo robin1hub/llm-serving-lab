@@ -6,6 +6,7 @@
 
 ```text
 run_simulation.py       唯一运行入口
+prepare_workload.py     离线数据准备入口
 simulator/             models.py 数据结构、config.py 配置、engine.py 事件内核
 configs/               实验配置
 workloads/             请求数据
@@ -27,7 +28,7 @@ python3 run_simulation.py --config configs/decode_first.json --output output/dec
 python3 -m unittest discover -s tests -q
 ```
 
-Python 3.10+，仅标准库，无需安装依赖。默认结果 output/result.json，再次运行会覆盖同名文件。
+Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .venv 的独立依赖，见第 5 章。默认结果 output/result.json，再次运行会覆盖同名文件。
 
 ## 按章节学习
 
@@ -35,7 +36,8 @@ Python 3.10+，仅标准库，无需安装依赖。默认结果 output/result.js
 2. [Batch 与优先级](docs/chapters/02-batching.md)：组批、动态进出和等待取舍。
 3. [事件队列](docs/chapters/03-events.md)：到达、唤醒、完成。
 4. [配置实验](docs/chapters/04-configuration.md)：选择负载、策略和耗时。
+5. [ShareGPT 负载](docs/chapters/05-sharegpt.md)：真实分词、长度过滤和到达计划。
 
 现在主要阅读第 3、4 章，先看结果再看少量代码。旧示例代码可通过 Git 历史查看，当前目录不再保留多套引擎。
 
-后续计划：token 预算、分块与混合 batch、简单显存容量、ShareGPT 和 4090 校准；均尚未实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md) 和 AGENTS.md。
+当前可本地准备 ShareGPT 单轮负载；耗时尚未校准。后续计划：token 预算、分块与混合 batch、简单显存容量和 4090 校准。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md) 和 AGENTS.md。

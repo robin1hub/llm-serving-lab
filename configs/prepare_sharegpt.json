@@ -1,0 +1,13 @@
+{
+  "source": {
+    "format": "sharegpt",
+    "path": "../../router-simulator/datasets/sharegpt/ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json"
+  },
+  "tokenizer": {
+    "model_id": "Qwen/Qwen2.5-7B-Instruct",
+    "path": "../assets/tokenizers/qwen2.5-7b-instruct"
+  },
+  "selection": {"count": 100, "max_input_tokens": 4096, "max_output_tokens": 1024},
+  "arrival": {"mode": "fixed", "requests_per_second": 1.0, "seed": 42},
+  "output_dir": "../workloads/generated/sharegpt-100-fixed"
+}

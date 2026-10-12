@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from .models import Request, Timing
+from .dataset import sha256_file
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,7 @@ class Experiment:
     policy: Literal["prefill_first", "decode_first"]
     config_path: Path
     workload_path: Path
+    workload_metadata: dict | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -80,7 +82,18 @@ def load_experiment(path: Path) -> Experiment:
     if len({item.request_id for item in requests}) != len(requests):
         raise ValueError("负载中的 request_id 必须唯一")
 
+    # 生成负载的说明文件包含分词身份；校验它对应当前请求文件，避免沿用旧说明。
+    manifest_path = workload_path.with_suffix(".manifest.json")
+    metadata = None
+    if manifest_path.exists():
+        metadata = _read_json(manifest_path)
+        if not isinstance(metadata, dict) or metadata.get("schema_version") != 1:
+            raise ValueError("负载 manifest 版本或结构无效")
+        if metadata.get("requests_sha256") != sha256_file(workload_path):
+            raise ValueError("负载与 manifest 校验和不匹配，请重新准备")
+        if metadata.get("selected_count") != len(requests):
+            raise ValueError("负载与 manifest 请求数量不匹配")
     # 【重点 3：复用原 Request / Timing 的校验，返回不可变实验输入。】
     return Experiment(tuple(requests), Timing(**timing),
                       cast(Literal["prefill_first", "decode_first"], policy),
-                      config_path, workload_path)
+                      config_path, workload_path, metadata)
