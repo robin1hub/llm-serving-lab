@@ -12,6 +12,7 @@ simulator/             models.py 数据结构、config.py 配置、engine.py 事
                        scheduler.py 只读选批与人数上限
                        predictor.py 独立耗时预测与计算明细
                        kv_cache.py KV块身份、请求表、准入与生命周期
+                       memory_budget.py 显存字节预算换算KV块数
 configs/               实验配置
 workloads/             请求数据
  tests/                当前实现的测试
@@ -48,7 +49,8 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 10. [Predictor 耗时预测](docs/chapters/10-predictor.md)：工作量、上下文、算力/带宽、修正系数与手算。
 11. [混合 batch](docs/chapters/11-mixed-batches.md)：剩余预算、同轮完成、成员阶段与耗时对照。
 12. [KV块与容量准入](docs/chapters/12-kv-blocks.md)：物理块身份、请求表、预留/填充/就绪/释放与阻塞。
+13. [4090显存预算](docs/chapters/13-memory-budget.md)：独立容量profile、权重/预留、字节换算与来源。
 
-现在主要阅读第 12 章。运行 `python3 run_simulation.py --config configs/kv_blocks.json --output output/kv_blocks.json` 查看块的完整生命周期；`configs/kv_blocked.json` 展示容量阻塞，保存诊断后以退出码2结束。先读时间表和结构图，再看重点代码。当前仍单GPU，引用/设备字段为后续扩展保留，共享、COW和传输尚未实现。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
+现在主要阅读第 13 章。运行 `python3 run_simulation.py --config configs/rtx4090_memory.json --output output/rtx4090_memory.json` 查看服务器4090＋Qwen3-8B容量示例。独立profile在configs/profiles中；1972块来自实读显存/模型元数据和90%使用比例、2GiB预留假设，尚未实际校准。原第12章人工块数实验保留。当前仍单GPU，共享/COW/传输未实现。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
 
-当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替、混合 batch与KV分页准入，耗时尚未校准。后续计划：共享/COW、真实容量换算和4090校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。
+当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替、混合 batch与KV分页准入，耗时尚未校准。后续计划：共享/COW、实际容量验证和4090耗时校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。

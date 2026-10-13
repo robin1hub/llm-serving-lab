@@ -37,6 +37,8 @@ def main() -> None:
             "pending_request_ids": run.pending_request_ids,
             "pending_progress": [asdict(progress) for progress in run.pending_progress],
             "kv_cache": asdict(experiment.kv_config) if experiment.kv_config is not None else None,
+            "memory_budget": asdict(experiment.memory_budget) if experiment.memory_budget is not None else None,
+            "memory_provenance": experiment.memory_provenance,
             "kv_final": asdict(run.kv_final) if run.kv_final is not None else None,
             "kv_records": [asdict(record) for record in run.kv_records],
             "timing_source": ("teaching_assumption" if experiment.predictor_settings.kind == "teaching"

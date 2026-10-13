@@ -1,0 +1,27 @@
+{
+  "device": {
+    "name": "NVIDIA GeForce RTX 4090",
+    "memory_capacity_bytes": 25757220864
+  },
+  "model": {
+    "name": "Qwen3-8B BF16",
+    "num_layers": 36,
+    "num_kv_heads": 8,
+    "head_dim": 128,
+    "kv_bytes_per_element": 2,
+    "weight_bytes": 16381470720
+  },
+  "memory": {
+    "utilization": 0.9,
+    "runtime_reserve_bytes": 2147483648,
+    "block_metadata_bytes": 0,
+    "block_alignment_bytes": 1
+  },
+  "provenance": {
+    "captured_date": "2026-10-13",
+    "capacity_source": "Read-only nvidia-smi: six RTX 4090 devices each report 24564 MiB; this profile models one device.",
+    "model_source": "Server Qwen3-8B config.json and model.safetensors.index.json metadata.total_size; checkpoint dtype bfloat16.",
+    "assumptions": "90 percent utilization, 2 GiB runtime reserve, BF16 KV, zero block metadata; runtime reserve and weight VRAM footprint are not measured.",
+    "timing_status": "Capacity profile only; does not calibrate Predictor or represent measured serving latency."
+  }
+}

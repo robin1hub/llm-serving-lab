@@ -10,6 +10,7 @@ from .dataset import sha256_file
 from .scheduler import Policy, SchedulerConfig, SchedulerProfile
 from .predictor import Calibration, DeviceProfile, ModelProfile, PredictorSettings
 from .kv_cache import KVConfig
+from .memory_budget import MemoryBudget, MemoryDevice, MemoryModel, MemorySettings, resolve_budget
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,8 @@ class Experiment:
     worker_role: str = "Mix"
     predictor_settings: PredictorSettings = PredictorSettings()
     kv_config: KVConfig | None = None
+    memory_budget: MemoryBudget | None = None
+    memory_provenance: dict | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -71,9 +74,33 @@ def load_experiment(path: Path) -> Experiment:
                   {"timing", "predictor", "kv_cache", "scheduler", "scheduler_profiles", "workers"})
     workload = _fields(raw["workload"], {"path"}, "workload")
     kv_config = None
+    memory_budget = None
+    memory_provenance = None
     if "kv_cache" in raw:
-        kv = _fields(raw["kv_cache"], {"gpu_id", "total_blocks", "block_tokens"}, "kv_cache")
-        kv_config = KVConfig(**kv)
+        # 【显存重点】人工块数和独立预算profile二选一；换算完复用原BlockPool。
+        kv = _fields(raw["kv_cache"], {"gpu_id", "block_tokens"}, "kv_cache",
+                     {"total_blocks", "memory_profile"})
+        if ("total_blocks" in kv) == ("memory_profile" in kv):
+            raise ValueError("kv_cache必须且只能设置total_blocks或memory_profile之一")
+        if "total_blocks" in kv:
+            kv_config = KVConfig(kv["gpu_id"], kv["total_blocks"], kv["block_tokens"])
+        else:
+            if not isinstance(kv["memory_profile"], str) or not kv["memory_profile"].strip():
+                raise ValueError("memory_profile必须是非空路径")
+            profile_path = (config_path.parent / kv["memory_profile"]).resolve()
+            spec = _fields(_read_json(profile_path), {"device", "model", "memory"}, "memory_profile",
+                           {"provenance"})
+            device = _fields(spec["device"], {"name", "memory_capacity_bytes"}, "memory_profile.device")
+            model = _fields(spec["model"], {"name", "num_layers", "num_kv_heads", "head_dim",
+                            "kv_bytes_per_element", "weight_bytes"}, "memory_profile.model")
+            settings = _fields(spec["memory"], {"utilization", "runtime_reserve_bytes"}, "memory_profile.memory",
+                               {"block_metadata_bytes", "block_alignment_bytes"})
+            memory_budget = resolve_budget(str(profile_path), MemoryDevice(**device), MemoryModel(**model),
+                                           MemorySettings(**settings), kv["block_tokens"])
+            kv_config = KVConfig(kv["gpu_id"], memory_budget.total_blocks, kv["block_tokens"])
+            memory_provenance = spec.get("provenance")
+            if memory_provenance is not None and not isinstance(memory_provenance, dict):
+                raise ValueError("memory_profile.provenance必须是对象")
     # 【方案重点】兼容旧配置，但新旧写法不能混用，防止两个地方设置不同策略。
     if "scheduler" in raw:
         if "scheduler_profiles" in raw or "workers" in raw:
@@ -138,6 +165,17 @@ def load_experiment(path: Path) -> Experiment:
         timing_config = Timing()  # 兼容已有Experiment字段；roofline不使用它，输出为null。
     else:
         raise ValueError("predictor.kind 必须是 teaching 或 roofline")
+    if memory_budget is not None and predictor_settings.model is not None:
+        # 同一模型的容量和耗时不能使用两套不同的KV结构。
+        prediction_model = predictor_settings.model
+        memory_model = memory_budget.model
+        actual = (prediction_model.num_layers, prediction_model.num_kv_heads,
+                  prediction_model.hidden_size // prediction_model.num_attention_heads,
+                  prediction_model.kv_bytes_per_element)
+        expected = (memory_model.num_layers, memory_model.num_kv_heads,
+                    memory_model.head_dim, memory_model.kv_bytes_per_element)
+        if actual != expected:
+            raise ValueError("memory_profile与Predictor的KV模型结构/精度不一致")
     if not isinstance(workload["path"], str) or not workload["path"].strip():
         raise ValueError("workload.path 必须是非空路径字符串")
     policy = profile.mix_algorithm
@@ -174,4 +212,5 @@ def load_experiment(path: Path) -> Experiment:
                       cast(Policy, policy),
                       config_path, workload_path, metadata, scheduler_config.max_batch_requests,
                       scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens,
-                      profile, profile_name, worker_id, worker_role, predictor_settings, kv_config)
+                      profile, profile_name, worker_id, worker_role, predictor_settings, kv_config,
+                      memory_budget, memory_provenance)
