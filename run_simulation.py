@@ -20,7 +20,8 @@ def main() -> None:
     try:
         # 【重点 1】文件转为请求对象；事件内核继续使用原来的函数。
         experiment = load_experiment(args.config)
-        run = simulate_events(experiment.requests, experiment.timing, policy=experiment.policy)
+        run = simulate_events(experiment.requests, experiment.timing, policy=experiment.policy,
+                              max_batch_requests=experiment.max_batch_requests)
         summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
@@ -30,6 +31,8 @@ def main() -> None:
             "workload_path": str(experiment.workload_path),
             "workload_metadata": experiment.workload_metadata,
             "policy": experiment.policy,
+            "scheduler": {"policy": experiment.policy, "max_batch_requests": experiment.max_batch_requests,
+                          "decode_order": "round_robin_after_completion"},
             "timing": asdict(experiment.timing),
             "summary": summary,
             "requests": [
@@ -40,6 +43,7 @@ def main() -> None:
                 for result in run.batch_run.results
             ],
             "steps": [asdict(step) for step in run.batch_run.steps],
+            "plans": [asdict(plan) for plan in run.plans],
             "trace": run.trace,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)

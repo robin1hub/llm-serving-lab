@@ -1,0 +1,6 @@
+[
+  {"request_id": "A", "arrival_ms": 0, "input_tokens": 1, "output_tokens": 3},
+  {"request_id": "B", "arrival_ms": 0, "input_tokens": 1, "output_tokens": 3},
+  {"request_id": "C", "arrival_ms": 0, "input_tokens": 1, "output_tokens": 3},
+  {"request_id": "D", "arrival_ms": 0, "input_tokens": 1, "output_tokens": 3}
+]

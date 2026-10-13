@@ -7,6 +7,7 @@ from typing import Literal
 
 from .models import BatchRun, BatchStep
 from .models import Event, Request, Result, Timing
+from .scheduler import BatchPlan, ReadyTask, Scheduler, SchedulerConfig, SchedulingSnapshot, rotate_after_completion
 
 
 @dataclass(order=True, frozen=True)
@@ -19,21 +20,23 @@ class _ScheduledEvent:
     kind: str = field(compare=False)
     request_ids: tuple[str, ...] = field(compare=False)
     phase: str = field(default="", compare=False)
+    plan: BatchPlan | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
 class EventRun:
     batch_run: BatchRun
     trace: tuple[str, ...]
+    plans: tuple[BatchPlan, ...]
 
 
 def simulate_events(
     requests: tuple[Request, ...], timing: Timing, *,
     policy: Literal["prefill_first", "decode_first"] = "prefill_first",
+    max_batch_requests: int | None = None,
 ) -> EventRun:
-    """保持原有 batch 规则，只更换时间推进方式。"""
-    if policy not in ("prefill_first", "decode_first"):
-        raise ValueError("policy 必须是 prefill_first 或 decode_first")
+    """单卡事件执行；Scheduler 只提计划，内核负责提交和完成。"""
+    scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests))
     if len({item.request_id for item in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
@@ -48,17 +51,19 @@ def simulate_events(
     waiting: deque[str] = deque()
     active: list[str] = []
     steps: list[BatchStep] = []
+    plans: list[BatchPlan] = []
     trace: list[str] = []
     busy = False
     wakeup_pending = False
     sequence = 0
     now_ms = 0.0
 
-    def schedule(time_ms: float, kind: str, ids: tuple[str, ...] = (), phase: str = "") -> None:
+    def schedule(time_ms: float, kind: str, ids: tuple[str, ...] = (), phase: str = "",
+                 plan: BatchPlan | None = None) -> None:
         nonlocal sequence
         # 同时间先登记到达，再结算完成，最后调度；与 P/D 策略优先级不同。
         priority = {"arrival": 0, "complete": 1, "wakeup": 2}[kind]
-        heapq.heappush(future, _ScheduledEvent(time_ms, priority, sequence, kind, ids, phase))
+        heapq.heappush(future, _ScheduledEvent(time_ms, priority, sequence, kind, ids, phase, plan))
         sequence += 1
 
     def wake_scheduler() -> None:
@@ -87,7 +92,9 @@ def simulate_events(
 
         # 【重点 4：完成通知到来后，才记 token、退出请求并释放 GPU。】
         elif event.kind == "complete":
-            for request_id in event.request_ids:
+            assert event.plan is not None  # 完成的是启动时固定的计划，不重新选成员。
+            for item in event.plan.items:
+                request_id = item.request_id
                 token_times[request_id].append(now_ms)
                 count = len(token_times[request_id])
                 records[request_id].append(Event(now_ms, f"{event.phase} 完成，产出 token", count))
@@ -97,6 +104,8 @@ def simulate_events(
                         active.remove(request_id)
                 elif event.phase == "Prefill":
                     active.append(request_id)
+            if event.phase == "Decode":
+                active = list(rotate_after_completion(tuple(active), event.request_ids))
             busy = False
             trace.append(f"  完成后 active={active}；GPU 空闲")
             wake_scheduler()
@@ -105,17 +114,26 @@ def simulate_events(
             wakeup_pending = False
             if busy or not (waiting or active):
                 continue
-            choose_prefill = bool(waiting) and (policy == "prefill_first" or not active)
-            if choose_prefill:
+            # 【选批重点：只读快照 → 候选计划】快照不暴露真实最终输出长度。
+            snapshot = SchedulingSnapshot(
+                tuple(ReadyTask(item, "Prefill", by_id[item].input_tokens) for item in waiting),
+                tuple(ReadyTask(item, "Decode", 1) for item in active),
+            )
+            plan = scheduler.decide(snapshot)
+            if plan is None:
+                continue
+            members = plan.request_ids
+            phase = plan.phase
+            trace.append(f"  候选 Prefill={list(waiting)}，Decode={active}；"
+                         f"选择 {phase} {list(members)}；{plan.reason}")
+            # 【提交重点】本步无 KV 容量检查；内核确认计划后才取走请求、占用 GPU。
+            if phase == "Prefill":
                 request_id = waiting.popleft()
-                members = (request_id,)
-                phase = "Prefill"
-                duration_ms = by_id[request_id].input_tokens * timing.prefill_ms_per_input_token
+                assert request_id == members[0]
+                duration_ms = plan.items[0].token_count * timing.prefill_ms_per_input_token
                 starts[request_id] = now_ms
                 records[request_id].append(Event(now_ms, "开始 Prefill"))
             else:
-                members = tuple(active)
-                phase = "Decode"
                 duration_ms = timing.decode_ms_per_step
 
             # 【重点 5：开始执行只注册未来完成，不把时钟跳到结束。】
@@ -123,7 +141,8 @@ def simulate_events(
             end_ms = now_ms + duration_ms
             busy = True
             steps.append(BatchStep(now_ms, end_ms, phase, members))
-            schedule(end_ms, "complete", members, phase)
+            plans.append(plan)
+            schedule(end_ms, "complete", members, phase, plan)
             trace.append(f"  启动 {phase} {list(members)}；注册 {end_ms:g}ms 完成通知")
 
     # 辅助封装：只把记录转换为原有结果类型，方便与旧模型对照。
@@ -131,4 +150,4 @@ def simulate_events(
         Result(item, tuple(records[item.request_id]), tuple(token_times[item.request_id]), starts[item.request_id])
         for item in ordered
     )
-    return EventRun(BatchRun(results, tuple(steps)), tuple(trace))
+    return EventRun(BatchRun(results, tuple(steps)), tuple(trace), tuple(plans))

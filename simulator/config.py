@@ -7,6 +7,7 @@ from typing import Literal, cast
 
 from .models import Request, Timing
 from .dataset import sha256_file
+from .scheduler import SchedulerConfig
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,7 @@ class Experiment:
     config_path: Path
     workload_path: Path
     workload_metadata: dict | None = None
+    max_batch_requests: int | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -41,12 +43,12 @@ def _read_json(path: Path) -> object:
         raise ValueError(f"读取 {path} 失败：{error}") from error
 
 
-def _fields(value: object, expected: set[str], location: str) -> dict:
+def _fields(value: object, expected: set[str], location: str, optional: set[str] | None = None) -> dict:
     """未知字段也报错，让拼写错误在运行前被发现。"""
     if not isinstance(value, dict):
         raise ValueError(f"{location} 必须是对象")
     missing = expected - value.keys()
-    unknown = value.keys() - expected
+    unknown = value.keys() - expected - (optional or set())
     if missing or unknown:
         raise ValueError(f"{location}：缺少字段 {sorted(missing)}；未知字段 {sorted(unknown)}")
     return value
@@ -57,7 +59,7 @@ def load_experiment(path: Path) -> Experiment:
     config_path = path.resolve()
     raw = _fields(_read_json(config_path), {"workload", "scheduler", "timing"}, "config")
     workload = _fields(raw["workload"], {"path"}, "workload")
-    scheduler = _fields(raw["scheduler"], {"policy"}, "scheduler")
+    scheduler = _fields(raw["scheduler"], {"policy"}, "scheduler", {"max_batch_requests"})
     timing = _fields(raw["timing"],
                      {"prefill_ms_per_input_token", "decode_ms_per_step"}, "timing")
     if not isinstance(workload["path"], str) or not workload["path"].strip():
@@ -65,6 +67,7 @@ def load_experiment(path: Path) -> Experiment:
     policy = scheduler["policy"]
     if policy not in ("prefill_first", "decode_first"):
         raise ValueError("scheduler.policy 必须是 prefill_first 或 decode_first")
+    scheduler_config = SchedulerConfig(policy, scheduler.get("max_batch_requests"))
 
     # 【重点 2：负载相对路径以配置文件所在目录为基准，不依赖运行目录。】
     workload_path = (config_path.parent / workload["path"]).resolve()
@@ -96,4 +99,4 @@ def load_experiment(path: Path) -> Experiment:
     # 【重点 3：复用原 Request / Timing 的校验，返回不可变实验输入。】
     return Experiment(tuple(requests), Timing(**timing),
                       cast(Literal["prefill_first", "decode_first"], policy),
-                      config_path, workload_path, metadata)
+                      config_path, workload_path, metadata, scheduler_config.max_batch_requests)

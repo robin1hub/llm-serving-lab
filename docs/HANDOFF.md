@@ -1,6 +1,6 @@
 # 项目交接：当前状态
 
-更新时间：2026-10-12（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
+更新时间：2026-10-13（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
 
 用户以学习为主，代码基础较弱；先讲机制、状态表和结果，再讲少量 Python，不要求完整读懂代码。代码需有中文原因注释和编号阅读重点。
 
@@ -8,8 +8,8 @@
 
 - 唯一入口 run_simulation.py；simulator/models.py 保存不可变数据结构，config.py 严格加载 JSON，engine.py 保存事件循环。
 - configs/ 选择 workload、P/D 策略和教学耗时；workloads/ 是人工 token 长度请求；结果保存到 output/。
-- docs/chapters/ 按六章学习；第 5 章分词/负载，第 6 章结果统计；docs/LEARNING_LOG.md 保留历史过程。
-- 单 GPU、完整单请求 Prefill、所有活跃请求同轮 Decode。支持 Prefill 优先和严格 Decode 优先，后者当前退化为串行。
+- docs/chapters/ 按七章学习；第 5 章分词/负载，第 6 章统计，第 7 章独立 Scheduler；docs/LEARNING_LOG.md 保留历史过程。
+- 单 GPU、完整单请求 Prefill、Decode 按可配置人数上限轮转选批。省略/null 上限兼容之前所有活跃请求同轮执行。支持 Prefill 优先和严格 Decode 优先，后者当前退化为串行。
 - heapq 按时间、事件优先级、序号排序。到达只排队，唤醒启动并注册完成，完成才产生 token。waiting 不包含未来请求，busy 防止重叠。
 - ShareGPT 单轮数据准备已接入，使用本地 Qwen2.5-7B-Instruct tokenizer；没有真实模型计算、显存容量、混合 batch 或校准。未改师兄项目或环境。
 
@@ -20,6 +20,10 @@
 默认 Prefill 优先 A token 时间 8/14/16ms、B 为 12/14ms；严格 Decode 优先 A 为 8/10/12ms、B 为 16/18ms。配置驱动结果保持一致。
 
 ## 接下来
+
+最新阶段 2026-10-13：已提取 scheduler.py，冻结 ReadyTask/SchedulingSnapshot/BatchPlan 仅描述下一步工作，不暴露最终输出长度。decide 只读、返回计划或 None；engine 提交计划，完成时更新 token、剔除完成者、把已服务者轮转到尾部。max_batch_requests 为正整数/null/省略；省略保持原结果。输出 scheduler/plans 与候选 trace。无 KV capacity checker、事务失败、分块或混合 batch。
+
+四请求示例 configs/batch_limit.json：Prefill A/B/C/D 后 Decode [A,B]、[C,D]、[A,B]、[C,D]，最后 16ms 完成。25 标准库测试中 23 通过、2 分词集成跳过；默认 ShareGPT 请求/steps/summary 与此前结果一致。第 7 章完整设计已同步；先让用户理解候选集合与本轮成员区别，随后才加 token 预算与分块。
 
 2026-10-12 文档补全：按用户要求，第 5、6 章补入设计取舍、逐函数职责、数据结构、关键代码及测试映射。说明离线长度与模型生成的区别、token ID 未保存的边界、manifest 发布和核对、只读结果统计、间隔权重及未来未完成请求口径。仅文档改动，无新机制；当前让用户优先学习这两章，之后讨论资源限制。
 
