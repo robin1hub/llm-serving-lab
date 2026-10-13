@@ -12,6 +12,9 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--gpu-uuid", default="GPU-0f409808-9870-2765-3a7c-540b7d06c6c7")
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
+    parser.add_argument("--max-existing-memory-mib", type=int, default=64)
     args = parser.parse_args()
     if Path(args.run_id).name != args.run_id or args.run_id in (".", ".."):
         raise ValueError("run-id必须是单个目录名")
@@ -21,7 +24,9 @@ def main() -> int:
         raise ValueError("输出目录已存在")
     command = [str(root / "venv/bin/python"), str(root / "collect_batches.py"),
                "--model", "/data/HF_MODELS/Qwen3-8B", "--output", str(out),
-               "--gpu-uuid", "GPU-0f409808-9870-2765-3a7c-540b7d06c6c7"]
+               "--gpu-uuid", args.gpu_uuid,
+               "--gpu-memory-utilization", str(args.gpu_memory_utilization),
+               "--max-existing-memory-mib", str(args.max_existing_memory_mib)]
     if args.smoke:
         command.append("--smoke")
     # 所有缓存进入独立目录；卡号由采集器再次核对UUID及占用后决定。

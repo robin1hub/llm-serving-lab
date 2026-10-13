@@ -17,9 +17,13 @@ def main() -> None:
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--gpu-uuid", required=True)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
+    parser.add_argument("--max-existing-memory-mib", type=int, default=64)
     parser.add_argument("--decode-output-tokens", type=int, default=32)
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
+    if not 0 < args.gpu_memory_utilization < 1:
+        raise ValueError("显存使用比例必须在0与1之间")
     if args.output.exists():
         raise ValueError("使用新的输出目录，避免覆盖原始记录")
     args.output.mkdir(parents=True)
@@ -32,14 +36,14 @@ def main() -> None:
         "nvidia-smi", "--query-gpu=index,uuid,memory.used,utilization.gpu", "--format=csv,noheader"
     ], text=True)
     (args.output / "gpu_before.txt").write_text(gpu)
-    physical_index = select_device(gpu, args.gpu_uuid)
+    physical_index = select_device(gpu, args.gpu_uuid, args.max_existing_memory_mib)
     # 0.11.0的NVML映射按整数解析CUDA_VISIBLE_DEVICES；先核对UUID再传数字卡号。
     os.environ["CUDA_VISIBLE_DEVICES"] = str(physical_index)
 
     from vllm import LLM, SamplingParams
 
     settings = dict(model=str(args.model), dtype="bfloat16", tensor_parallel_size=1,
-                    gpu_memory_utilization=0.9, max_model_len=4096, max_num_seqs=8,
+                    gpu_memory_utilization=args.gpu_memory_utilization, max_model_len=4096, max_num_seqs=8,
                     max_num_batched_tokens=4096, block_size=16, enforce_eager=True,
                     enable_prefix_caching=False, enable_chunked_prefill=False,
                     worker_cls="worker_probe.TimedWorker", seed=42,
@@ -51,6 +55,8 @@ def main() -> None:
                      ("vllm", "torch", "transformers")},
         "engine": settings, "timing_scope": "worker_execute_wall",
         "profiling_enabled": False, "cuda_graph_mode": "eager",
+        "shared_gpu_trial": args.max_existing_memory_mib > 64,
+        "max_existing_memory_mib": args.max_existing_memory_mib,
         "model_config": json.loads((args.model / "config.json").read_text()),
         "hashes": {name: hashlib.sha256((args.model / name).read_bytes()).hexdigest()
                    for name in ("config.json", "model.safetensors.index.json", "tokenizer.json")},

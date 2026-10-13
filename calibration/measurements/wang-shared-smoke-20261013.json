@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "kind": "hardware_smoke_trial_not_calibrated_profile",
+  "run_id": "wang-qwen3-8b-eager-shared-smoke-20261013-03",
+  "complete": true,
+  "record_status": "measured",
+  "shared_gpu_trial": true,
+  "gpu_uuid": "GPU-0f409808-9870-2765-3a7c-540b7d06c6c7",
+  "software": {
+    "vllm": "0.11.0",
+    "torch": "2.8.0",
+    "transformers": "4.56.1"
+  },
+  "model_config_sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+  "engine": {
+    "model": "/data/HF_MODELS/Qwen3-8B",
+    "dtype": "bfloat16",
+    "tensor_parallel_size": 1,
+    "gpu_memory_utilization": 0.8,
+    "max_model_len": 4096,
+    "max_num_seqs": 8,
+    "max_num_batched_tokens": 4096,
+    "block_size": 16,
+    "enforce_eager": true,
+    "enable_prefix_caching": false,
+    "enable_chunked_prefill": false,
+    "worker_cls": "worker_probe.TimedWorker",
+    "seed": 42,
+    "disable_log_stats": true
+  },
+  "timing_scope": "worker_execute_wall",
+  "capacity": {
+    "reported_gpu_blocks": 1412,
+    "observed_block_tokens": 16,
+    "reported_kv_token_capacity": 22592,
+    "reported_kv_budget_bytes": 3332999987.200001,
+    "weight_vram_bytes": 16394201088,
+    "schema_version": 1,
+    "record_status": "measured",
+    "run_id": "wang-qwen3-8b-eager-shared-smoke-20261013-03",
+    "capacity_source": "TimedWorker reads initialized cache_config",
+    "source_artifact": "startup.log"
+  },
+  "batches": [
+    {
+      "phase": "Prefill",
+      "batch_requests": 1,
+      "sample_count": 2,
+      "new_tokens": [
+        128
+      ],
+      "context_tokens": [
+        0
+      ],
+      "median_ms": 24.051766842603683,
+      "min_ms": 23.781709372997284,
+      "max_ms": 24.321824312210083
+    },
+    {
+      "phase": "Decode",
+      "batch_requests": 1,
+      "sample_count": 4,
+      "new_tokens": [
+        1
+      ],
+      "context_tokens": [
+        128,
+        129
+      ],
+      "median_ms": 18.317172303795815,
+      "min_ms": 18.271442502737045,
+      "max_ms": 18.466506153345108
+    }
+  ],
+  "raw_rows": 12,
+  "generation_checks": 6,
+  "fit_performed": false,
+  "raw_artifact_sha256": {
+    "metadata.json": "a2c95d870459be91c083b1c9e4adb792117998ed3baca138bbbf516e1d96bea7",
+    "capacity.json": "d317cd1aa4f6b935e5f7527978813a76ddfc42c4e1542bbee50a54ea9a5e1ff7",
+    "batches.jsonl": "c802de81cb7ce91b8bc9f1271dfef082b54fe5ea54a79f21635dd754368c8536",
+    "generation_checks.jsonl": "83de153e0dc67458018359402364ee7185635c73f03b908ca7799a0b293f40c6",
+    "gpu_before.txt": "6d133be97fc1f9152b32d0c9f80603b1ef75185b06aec2732536db818087b4f7",
+    "startup.log": "cd8c78c1bc983d9779b5e5140ff01144828d556483c5379c4f7141c825b285a7",
+    "COMPLETE": "21bc8f303f34de8b56cf70b83a1e46641bfdb1f84e4ff37eded604a8cb9e70c4"
+  }
+}

@@ -161,3 +161,9 @@ calibration/scripts是离线工具，不改变Scheduler/Engine/KV执行契约。
 configs/reference_senior.json是显式可选参照系数，设备速度假设100TFLOP/s/1TB/s，原默认配置不变，Predictor来源仍uncalibrated_roofline。不能用TTFT拟合执行时间；完整DES示例另记调度周期及小Prefill等待条件。不覆盖Mixed/恢复/容量精度。
 
 真实采集入口collect_batches.py/worker_probe.py只针对vLLM0.11.0单卡eager，Worker前后CUDA同步计时worker_execute_wall，不称engine_iteration或gpu_forward。batch_records从实际Scheduler输出提取上下文与工作量，拒绝抢占恢复和多token Decode；UUID核对后数字卡号映射及显存/利用率检查先于vLLM初始化。metadata.started与measured分开，当前启动未成功、无有效实测数据；独立环境依赖ready不代表GPU计时已验证。第15章初始“未实现采集器”描述为历史阶段，当前工具已准备。
+
+## GPU0共享卡smoke补充
+
+select_device新增显式max_existing_memory_mib阈值，默认64；共享试跑用3072且仍要求利用率0。collect_batches/launch_remote显式传显存使用比例，默认0.9不变，本次0.8，metadata保存shared_gpu_trial及阈值。授权只表示允许共享试跑，利用率0不构成独占保证。
+
+TimedWorker在Qwen3-8B/vLLM0.11.0真实smoke已运行成功，读取实际1412块/16token和Worker计时。summarize_smoke只接受完整两形状试跑，过滤预热与Decode样本中的输入Prefill，提交摘要和证据SHA；不改运行时、Predictor来源或默认容量profile。完整拟合/验证仍未执行，不能用少量共享smoke发布可靠性能profile。

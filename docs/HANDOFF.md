@@ -101,3 +101,13 @@ configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms�
 12组fit、4组validation；dense_factor=1.0121111392281201、attention_factor=0.9053187031593333、开销0。验证最大绝对相对误差3.74%→2.63%，部分Decode变差，fit短Prefill仍低估约6%。不保证全范围，不覆盖Mixed/Recompute/非零context Prefill/ShareGPT。新增可选configs/reference_senior.json，本地运行首输出15.3224ms、完成30.6432ms；默认配置与运行时实现不变，仍uncalibrated_roofline。条件/来源/16组对照已提交calibration/reference/{scenario,result}.json，完整输出忽略于output/calibration/senior-reference-04。
 
 第16章有流程图、结构表、拟合公式、代码重点与结果。72测试中70通过、2分词集成缺依赖跳过，参照配置CLI成功。用户尚未确认理解本步。下一步由用户选择讨论差异，或空闲卡就绪后继续真实smoke；不能将参照系数包装为4090实测校准。
+
+## 最新：王GPU0共享卡smoke成功（2026-10-13）
+
+用户同意尝试占约2GB、利用率持续0的王机卡，撤销本任务继续等待空闲卡的限制。三次检查0–3各2441MiB/0%，选择GPU0，不清理/终止他人进程。新增显式--max-existing-memory-mib=3072、--gpu-memory-utilization=0.8；默认仍64MiB/0.9，非零利用率仍拒绝。metadata.shared_gpu_trial=true，不能宣称独占或无干扰。更新采集脚本已同步王服务器独立目录。
+
+run_id=wang-qwen3-8b-eager-shared-smoke-20261013-03，成功加载Qwen3-8B、完成两形状smoke、退出0，已有COMPLETE/measured。实际权重VRAM16394201088 bytes，KV预算3332999987.2 bytes、1412块×16=22592token（80%预算，不能直接与原90%纸面1972块比较）。6次生成输出长度通过，12条Worker记录；剔除预热及Decode实验的输入Prefill，P有效2轮中位24.0518ms，D有效4轮中位18.3172ms、实际context128/129。是worker_execute_wall同步eager时间，不是TTFT或纯kernel。退出后GPU0恢复原2441MiB；无持续推理任务。
+
+原始数据已取回ignored output/calibration/<run_id>，远端runs同目录保留；提交的calibration/measurements/wang-shared-smoke-20261013.json只有摘要/条件/原始证据SHA。新增summarize_smoke.py核对COMPLETE、measured、实际人数/阶段、输出数和预热排除，不拟合；5个采集专项测试通过。基础模拟器/默认Predictor/容量profile不变。
+
+最新讲解calibration/wang-shared-smoke.md及第15章入口；第16章的参照实测限制只描述当时参照实验。当前已取得少量硬件smoke数据且TimedWorker真实运行通过，不能沿用“无真实数据/计时未验证”的旧状态。尚未完整fit/validation矩阵、共享干扰监测、请求级校准或发布硬件profile；样本少，系数仍未校准。下一步讨论是否扩展完整矩阵，用户尚未确认理解这轮结果。

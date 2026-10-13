@@ -3,15 +3,17 @@
 from typing import Any
 
 
-def select_device(snapshot: str, requested_uuid: str) -> int:
-    """核对物理UUID，返回旧vLLM支持的数字卡号；拒绝已占用设备。"""
+def select_device(snapshot: str, requested_uuid: str, max_existing_memory_mib: int = 64) -> int:
+    """核对UUID及显式允许的既有占用，返回旧vLLM支持的数字卡号。"""
+    if type(max_existing_memory_mib) is not int or max_existing_memory_mib < 0:
+        raise ValueError("允许的既有显存占用必须是非负整数")
     for line in snapshot.splitlines():
         fields = [part.strip() for part in line.split(",")]
         if len(fields) != 4 or fields[1] != requested_uuid:
             continue
         used_mib = int(fields[2].split()[0])
         utilization = int(fields[3].split()[0])
-        if used_mib > 64 or utilization > 0:
+        if used_mib > max_existing_memory_mib or utilization > 0:
             raise RuntimeError(f"候选卡已有占用：{used_mib}MiB，利用率{utilization}%")
         return int(fields[0])
     raise ValueError("未找到指定GPU UUID")

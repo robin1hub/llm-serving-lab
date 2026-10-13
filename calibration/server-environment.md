@@ -82,3 +82,7 @@ environments/alpha-wang.json和alpha-du.json保存原始检查报告；对应*-r
 用户随后恢复王服务器实验，两次smoke均未成功：第一次UUID解析兼容问题，已修正为核对UUID后传数字卡号；第二次候选卡占2441MiB，启动保护拒绝。没有加载模型或取得有效容量/耗时数据。用户要求稍等，当前没有运行中的采集器，未终止他人任务。
 
 现改做本地师兄模拟器参照，见第16章与calibration/reference。采集脚本已保存scripts/collect_batches.py、worker_probe.py、batch_records.py和launch_remote.py，真实Worker计时仍未验证。之后恢复前需同步最新版脚本并复查空闲GPU。
+
+## 最新：共享卡GPU0最小运行成功
+
+用户随后允许尝试王机占2441MiB、利用率0的卡；GPU0采用80%预算、显式3072MiB既有占用阈值，完成run wang-qwen3-8b-eager-shared-smoke-20261013-03。Qwen3-8B实际加载和TimedWorker计时已验证，1412个KV块，COMPLETE/measured/退出0。任务已结束，GPU0恢复原占用。详见[共享试跑](wang-shared-smoke.md)；仍未完整拟合和验证，不修改已有环境。
