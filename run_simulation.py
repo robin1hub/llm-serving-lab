@@ -27,7 +27,7 @@ def main() -> None:
                               prefill_chunk_tokens=experiment.prefill_chunk_tokens,
                               scheduler_profile=experiment.scheduler_profile,
                               predictor=build_predictor(experiment.predictor_settings, experiment.timing),
-                              kv_config=experiment.kv_config)
+                              kv_config=experiment.kv_config, recovery_config=experiment.recovery_config)
         summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
@@ -39,6 +39,13 @@ def main() -> None:
             "kv_cache": asdict(experiment.kv_config) if experiment.kv_config is not None else None,
             "memory_budget": asdict(experiment.memory_budget) if experiment.memory_budget is not None else None,
             "memory_provenance": experiment.memory_provenance,
+            "recovery": asdict(experiment.recovery_config),
+            "recovery_records": [asdict(record) for record in run.recovery_records],
+            "recovery_pending": [asdict(target) for target in run.recovery_pending],
+            "recovery_summary": {
+                "preemptions": sum(record.action == "preempt" for record in run.recovery_records),
+                "recomputed_tokens": sum(item.token_count for plan in run.plans for item in plan.items
+                                          if item.phase == "Recompute")},
             "kv_final": asdict(run.kv_final) if run.kv_final is not None else None,
             "kv_records": [asdict(record) for record in run.kv_records],
             "timing_source": ("teaching_assumption" if experiment.predictor_settings.kind == "teaching"
@@ -84,7 +91,7 @@ def main() -> None:
     for step in (() if args.summary else run.batch_run.steps):
         print(f"{step.start_ms:g}–{step.end_ms:g}ms {step.phase} {list(step.request_ids)}")
     if not args.summary:
-        print("计划工作量（新 token 数；Prefill range_start 是输入偏移）：")
+        print("计划工作量（本轮处理 token 数；Prefill/Recompute range_start 是序列偏移）：")
         for index, plan in enumerate(run.plans):
             print(f"  第 {index + 1} 轮：{[(item.request_id, item.phase, item.range_start, item.token_count) for item in plan.items]}")
     for result in (() if args.summary else run.batch_run.results):

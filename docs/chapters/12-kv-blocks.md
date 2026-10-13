@@ -141,3 +141,5 @@ python3 -m unittest discover -s tests -q
 ```
 
 test_kv_cache.py核对身份/范围/尾部浪费、冻结历史、保护释放、跨页增长、容量原子失败/回滚、混合缩块、Decode回退、阻塞诊断/退出码与旧行为兼容。下一步先理解这些结构，再分别添加共享、COW或多卡传输；已有GPU字段不能视为多卡已实现。
+
+后续补充：第14章新增可选preempt＋recompute恢复；本章例子默认block，原阻塞结果和容量公式保持不变。见[抢占与重算恢复](14-recompute-recovery.md)。

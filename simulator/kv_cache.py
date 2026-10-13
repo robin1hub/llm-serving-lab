@@ -117,7 +117,7 @@ class BlockPool:
                 selected.append(item)
                 free -= required
         for item in candidate.items:
-            if item.phase != "Prefill":
+            if item.phase not in ("Prefill", "Recompute"):
                 continue
             table = self._tables.get(item.request_id)
             allocated = len(table.block_ids) if table else 0
@@ -143,7 +143,7 @@ class BlockPool:
         for item in plan.items:
             if type(item.token_count) is not int or item.token_count <= 0:
                 raise ValueError("KV写入量必须为正整数")
-            if item.phase == "Prefill" and item.range_start != self.cached_tokens(item.request_id):
+            if item.phase in ("Prefill", "Recompute") and item.range_start != self.cached_tokens(item.request_id):
                 raise ValueError("Prefill范围必须紧接已缓存输入")
             required += self.additional_blocks(item.request_id, item.token_count)
         if required > self.free_blocks:

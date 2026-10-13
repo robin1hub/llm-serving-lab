@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 
-Phase = Literal["Prefill", "Decode"]
-BatchPhase = Literal["Prefill", "Decode", "Mixed"]
+Phase = Literal["Prefill", "Decode", "Recompute"]
+BatchPhase = Literal["Prefill", "Decode", "Mixed", "Recompute"]
 Policy = Literal["prefill_first", "decode_first", "alternating", "mixed_decode_first"]
 Role = Literal["P", "D", "Mix"]
 

@@ -163,3 +163,11 @@
 - 6张4090每张24564MiB；原Qwen2.5-7B路径不存在，选现有Qwen3-8B BF16（36层、8KV头、128维、权重张量16381470720字节）。
 - 90%使用、2GiB预留是假设，16token/块换算1972块；原teaching耗时不变，不称vLLM实测。保留人工块数，禁止双来源；roofline结构校验。
 - 第13章有配置/公式/单位/来源/流程图/结构及验证，HANDOFF/ARCHITECTURE同步。61测试中59通过、2跳过，用户尚未确认理解；下一步实测容量/耗时另行讨论。
+
+## 2026-10-13：可配置抢占与重算恢复
+
+- 用户同意参考师兄的恢复设计；将capacity_policy、victim_policy、recovery_action分别配置，首步仅recompute，默认block保持兼容。
+- 容量准入/Decode回退均失败后，选择其他请求释放KV并保存cached_tokens。fewest_generated与newest可切换；focus保护受益者至完成，再FIFO恢复，避免反复抢占。
+- Recompute经同一KV事务和Predictor重建历史上下文，遵守token/chunk预算、不生成输出、不重置TTFT或原Prefill进度。含已处理输出的历史也可重建；不模拟实际文本/张量。
+- 2块×2token例子8ms暂停B，A输出4/10/12ms；B重算12–16ms，原输出时间8/18/20ms，恢复代价落在ITL。额外重算token单列。
+- 69测试中67通过、2分词集成跳过；默认ShareGPT的requests/steps/summary/estimates与上一阶段完全相同。第14章含流程图、状态图、结构表、时序手算与代码阅读标记；HANDOFF/ARCHITECTURE同步。用户尚未确认理解，不自动继续共享、交换或多卡。

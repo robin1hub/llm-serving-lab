@@ -9,6 +9,7 @@ from .models import Event, Request, Result, Timing, _validate_time
 from .scheduler import BatchPlan, Policy, ReadyTask, Scheduler, SchedulerConfig, SchedulerProfile, SchedulingSnapshot, rotate_after_completion
 from .predictor import BatchEstimate, Predictor, PredictorItem, TeachingPredictor
 from .kv_cache import BlockPool, KVConfig, KVRecord, KVReservation, KVSnapshot
+from .recovery import RecoveryCandidate, RecoveryConfig, RecoveryController, RecoveryRecord, RecoveryTarget, select_victim
 
 
 @dataclass(order=True, frozen=True)
@@ -44,6 +45,8 @@ class EventRun:
     status: str = "completed"
     pending_request_ids: tuple[str, ...] = ()
     pending_progress: tuple[PendingProgress, ...] = ()
+    recovery_records: tuple[RecoveryRecord, ...] = ()
+    recovery_pending: tuple[RecoveryTarget, ...] = ()
 
 
 def simulate_events(
@@ -55,12 +58,16 @@ def simulate_events(
     scheduler_profile: SchedulerProfile | None = None,
     predictor: Predictor | None = None,
     kv_config: KVConfig | None = None,
+    recovery_config: RecoveryConfig = RecoveryConfig(),
 ) -> EventRun:
     """单卡事件执行；Scheduler 只提计划，内核负责提交和完成。"""
     scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests, max_tokens_per_batch,
                                           prefill_chunk_tokens), profile=scheduler_profile)
     duration_predictor = predictor if predictor is not None else TeachingPredictor(timing)
     kv_pool = BlockPool(kv_config) if kv_config is not None else None
+    if recovery_config.capacity_policy == "preempt" and kv_pool is None:
+        raise ValueError("抢占恢复需要KV池")
+    recovery = RecoveryController(recovery_config) if recovery_config.capacity_policy == "preempt" else None
     kv_records: list[KVRecord] = []
 
     def record_kv(time_ms: float, action: str) -> None:
@@ -72,6 +79,7 @@ def simulate_events(
         raise ValueError("request_id 必须唯一")
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
     by_id = {item.request_id: item for item in ordered}
+    arrival_order = {item.request_id: index for index, item in enumerate(ordered)}
     token_times: dict[str, list[float]] = {item.request_id: [] for item in ordered}
     records: dict[str, list[Event]] = {item.request_id: [] for item in ordered}
     starts: dict[str, float] = {}
@@ -106,6 +114,44 @@ def simulate_events(
             schedule(now_ms, "wakeup")
             wakeup_pending = True
 
+    def try_preempt() -> bool:
+        # 【恢复重点1】只在没有准入计划且GPU空闲时选择受害者；不读未来输出目标。
+        if recovery is None or kv_pool is None:
+            return False
+        memory = kv_pool.snapshot()
+        blocks = {block.block_id: block for block in memory.blocks}
+        tables = {table.request_id: table for table in memory.tables}
+        beneficiaries = (recovery.focus,) if recovery.focus else tuple(active) + tuple(waiting)
+        for beneficiary in beneficiaries:
+            needed = kv_pool.additional_blocks(beneficiary, 1)
+            candidates = []
+            for request_id in tuple(active) + tuple(waiting):
+                if request_id == beneficiary or request_id not in tables:
+                    continue
+                owned = [blocks[block_id] for block_id in tables[request_id].block_ids]
+                if any(block.execution_owner is not None for block in owned):
+                    continue
+                releasable = sum(block.request_refs == (request_id,) for block in owned)
+                # 不仅检查“有KV”，还要确保释放后受益请求能至少前进一步。
+                if releasable > 0 and kv_pool.free_blocks + releasable >= needed:
+                    candidates.append(RecoveryCandidate(request_id, len(token_times[request_id]),
+                                                         arrival_order[request_id]))
+            victim = select_victim(recovery.config, tuple(candidates))
+            if victim is None:
+                continue
+            cached = kv_pool.cached_tokens(victim)
+            kv_pool.release_request(victim)
+            if victim in active:
+                active.remove(victim)
+            if victim in waiting:
+                waiting.remove(victim)
+            recovery.suspend(victim, cached, beneficiary, now_ms)
+            records[victim].append(Event(now_ms, f"抢占，释放{cached}个token的KV，等待重算"))
+            trace.append(f"  抢占{victim}；保护{beneficiary}继续执行；恢复目标KV={cached}")
+            record_kv(now_ms, f"preempt:{victim}")
+            return True
+        return False
+
     for request in ordered:
         schedule(request.arrival_ms, "arrival", (request.request_id,))
 
@@ -132,6 +178,18 @@ def simulate_events(
                 record_kv(now_ms, "ready")
             for item in event.plan.items:
                 request_id = item.request_id
+                if item.phase == "Recompute":
+                    # 【恢复重点2】KV进度由池提交；原输入/已输出token记录都不倒退或重复。
+                    assert recovery is not None and recovery.restoring is not None and kv_pool is not None
+                    rebuilt = kv_pool.cached_tokens(request_id)
+                    records[request_id].append(Event(now_ms, f"重算KV进度{rebuilt}/{recovery.restoring.cached_tokens}"))
+                    if rebuilt == recovery.restoring.cached_tokens:
+                        recovery.finish_restore(now_ms)
+                        if token_times[request_id]:
+                            active.append(request_id)
+                        else:
+                            waiting.appendleft(request_id)
+                    continue
                 if item.phase == "Prefill":
                     # 【分块重点 1】完成事件才累加已处理输入；中间块不产生输出。
                     assert item.range_start == prefill_done[request_id]
@@ -153,6 +211,8 @@ def simulate_events(
                     if kv_pool is not None:
                         kv_pool.release_request(request_id)
                         record_kv(now_ms, f"release:{request_id}")
+                    if recovery is not None:
+                        recovery.completed(request_id)
                 elif item.phase == "Prefill":
                     active.append(request_id)
             # 【混合完成重点】只轮转本轮实际Decode成员，新进入active的Prefill不算已服务。
@@ -160,22 +220,43 @@ def simulate_events(
             if served_decode:
                 active = list(rotate_after_completion(tuple(active), served_decode))
             # 【交替重点】进度提交完成后才通知策略；查询计划本身不能切换轮次。
-            scheduler.on_batch_completed(event.plan)
+            if event.plan.phase != "Recompute":
+                scheduler.on_batch_completed(event.plan)
             busy = False
             trace.append(f"  完成后 active={active}；GPU 空闲")
             wake_scheduler()
 
         else:  # wakeup：GPU 空闲时才有资格选择下一轮。
             wakeup_pending = False
-            if busy or not (waiting or active):
+            if busy or not (waiting or active or (recovery and (recovery.queue or recovery.restoring))):
                 continue
+            # 【恢复重点3】先排空仍驻留请求，再FIFO恢复；新到达请求不抢恢复所需空间。
+            if recovery is not None and kv_pool is not None:
+                resident = any(kv_pool.cached_tokens(item) > 0 for item in tuple(waiting) + tuple(active))
+                if recovery.queue and recovery.restoring is None and recovery.focus is None and not resident:
+                    recovery.start_restore(now_ms)
+                    record_kv(now_ms, f"restore_start:{recovery.focus}")
+            focused_waiting = tuple(item for item in waiting if recovery is None or recovery.focus is None
+                                    or item == recovery.focus)
+            focused_active = tuple(item for item in active if recovery is None or recovery.focus is None
+                                   or item == recovery.focus)
             # 【选批重点：只读快照 → 候选计划】快照不暴露真实最终输出长度。
             snapshot = SchedulingSnapshot(
                 tuple(ReadyTask(item, "Prefill", by_id[item].input_tokens - prefill_done[item],
-                                prefill_done[item]) for item in waiting),
-                tuple(ReadyTask(item, "Decode", 1) for item in active),
+                                prefill_done[item]) for item in focused_waiting),
+                tuple(ReadyTask(item, "Decode", 1) for item in focused_active),
             )
-            plan = scheduler.decide(snapshot)
+            if recovery is not None and recovery.restoring is not None:
+                assert kv_pool is not None
+                target = recovery.restoring
+                cursor = kv_pool.cached_tokens(target.request_id)
+                limits = [target.cached_tokens - cursor]
+                limits.extend(limit for limit in (scheduler.config.max_tokens_per_batch,
+                                                   scheduler.config.prefill_chunk_tokens) if limit is not None)
+                plan = BatchPlan((ReadyTask(target.request_id, "Recompute", min(limits), cursor),),
+                                 "FIFO重算恢复：只重建已提交KV，不产生输出")
+            else:
+                plan = scheduler.decide(snapshot)
             if plan is None:
                 continue
             # 【KV重点1】选批只提候选，容量模块可缩块/删成员；未准入不修改队列。
@@ -190,6 +271,9 @@ def simulate_events(
                     if plan is not None:
                         plan = BatchPlan(plan.items, plan.reason + "；KV阻塞时回退Decode")
                 if plan is None:
+                    if try_preempt():
+                        wake_scheduler()
+                        continue
                     trace.append("  KV容量阻塞：无可准入计划；等待未来到达，否则结束为blocked")
                     record_kv(now_ms, "blocked")
                     continue
@@ -203,10 +287,10 @@ def simulate_events(
             # 首token是最终Prefill产生的，尚未再次输入模型：Decode context因此减1。
             predictor_items = tuple(PredictorItem(
                 item.request_id, item.phase, item.token_count,
-                item.range_start if item.phase == "Prefill" else
+                item.range_start if item.phase in ("Prefill", "Recompute") else
                 by_id[item.request_id].input_tokens + len(token_times[item.request_id]) - 1,
-                item.phase == "Decode" or
-                item.range_start + item.token_count == by_id[item.request_id].input_tokens,
+                item.phase == "Decode" or (item.phase == "Prefill" and
+                item.range_start + item.token_count == by_id[item.request_id].input_tokens),
             ) for item in plan.items)
             estimate = duration_predictor.estimate(predictor_items)
             duration_ms = estimate.duration_ms
@@ -262,4 +346,6 @@ def simulate_events(
                     tuple(kv_records), kv_pool.snapshot() if kv_pool is not None else None,
                     "blocked" if pending else "completed", pending,
                     tuple(PendingProgress(item, prefill_done[item], tuple(token_times[item]), starts.get(item))
-                          for item in pending))
+                          for item in pending), tuple(recovery.records) if recovery is not None else (),
+                    ((recovery.restoring,) if recovery.restoring is not None else ()) + tuple(recovery.queue)
+                    if recovery is not None else ())

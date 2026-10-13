@@ -16,6 +16,8 @@ flowchart LR
     E --> S[scheduler.decide]
     S --> P[不可变BatchPlan]
     P --> E
+    E --> RC[recovery 受害者选择与恢复状态]
+    RC --> E
     E --> PR[predictor.estimate]
     PR --> EST[不可变BatchEstimate]
     EST --> E
@@ -36,6 +38,7 @@ flowchart LR
 | simulator/engine.py | 持有队列与进度、提交计划、处理事件与完成 | 不解析原始文本或拟合真实耗时 |
 | simulator/memory_budget.py | 设备/模型/预留参数、KV字节及整块容量换算 | 不连接服务器、不部署模型、不管理块生命周期 |
 | simulator/kv_cache.py | KVConfig/Block/Table/Reservation、单GPU池、只读准入、事务与冻结快照 | 不选原始候选、不计算token内容、不进行网络传输 |
+| simulator/recovery.py | 独立策略配置、只读受害者选择、暂停/FIFO恢复与进展保护状态 | 不分配KV、不预测耗时、不决定最终输出长度 |
 | simulator/predictor.py | 不可变工作描述、模型/硬件/修正参数、教学或roofline估算 | 不选批、不分配KV、不修改进度或时钟 |
 | simulator/metrics.py | 从完成结果计算摘要 | 不改变事件/调度状态 |
 | run_simulation.py | 连接加载、执行、统计、输出 | 不实现第二套调度机制 |
@@ -61,7 +64,7 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 ## 执行契约与必须保持的不变量
 
 1. 单GPU执行区间不重叠；busy时到达只排队，不抢占。
-2. Scheduler.decide不改变快照或队列，计划可单阶段或Mixed；Prefill最多一个请求的输入块，Decode轮转。每成员阶段仍为Prefill/Decode，批级Mixed标签不用于更新请求状态。
+2. Scheduler.decide不改变快照或队列，计划可单阶段或Mixed；Prefill最多一个请求的输入块，Decode轮转。普通选批成员阶段仍为Prefill/Decode，批级Mixed标签不用于更新请求状态。
    Mix 槽仅在 P/D 都就绪时决定阶段；alternating 依据上轮完成阶段选择另一阶段，初始选 P。仅一阶段就绪时不空转，只有完成事件改变交替状态。mixed_decode_first先选Decode，再用剩余人数槽与token预算加入队首Prefill块；空间耗尽则仅Decode，不预留Prefill额度。
 3. 每计划成员数不超过人数上限，token_count总和不超过token上限；Prefill还不超过chunk。
 4. Prefill范围连续且恰好覆盖完整输入；prefill_done仅在完成事件累加。
@@ -88,7 +91,7 @@ TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所
 
 ## 明确尚未实现
 
-共享KV/COW/传输保护、实际显存预算验证、抢占恢复、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
+共享KV/COW/传输保护、实际显存预算验证、CPU交换、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
 
 ## 验证与交接入口
 
@@ -99,7 +102,7 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第13章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第14章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
 
 ## 第11章混合执行补充
 
@@ -117,7 +120,7 @@ admit只读删减候选，先留可增长Decode，剩余空间缩小Prefill。�
 
 无准入计划时不制造无进展事件，等待已有未来事件；事件耗尽且有未完成请求则status=blocked。结果保留pending_progress与KV快照；requests/summary仅统计完成请求，summary_scope明确completed_requests_only；CLI保存JSON再返回2。成功返回0。历史每个KV动作保存完整冻结快照，旧配置禁用时kv_final=null/kv_records为空。schema_version仍1，扩展status/pending/kv字段。
 
-KV分配与状态变化无独立耗时，未模拟张量/地址/外部空洞布局、共享/COW、未来增长预留或抢占。第12章与test_kv_cache.py是阅读/验证入口。用户明确希望支持后续多卡多状态，不回退为只计总token的模型；扩展机制逐步实现。
+KV分配与状态变化无独立耗时，未模拟张量/地址/外部空洞布局、共享/COW、未来增长预留；可选抢占恢复见第14章。第12章与test_kv_cache.py是阅读/验证入口。用户明确希望支持后续多卡多状态，不回退为只计总token的模型；扩展机制逐步实现。
 
 ## 第13章：独立显存预算profile
 
@@ -128,3 +131,15 @@ memory_budget.resolve_budget计算floor容量×比例，再扣显式权重/运�
 2026-10-13服务器只读：6张4090每卡24564MiB，使用单卡容量25757220864字节；现有Qwen3-8B为36层/8KV头/head_dim128/BF16，权重metadata.total_size=16381470720。当前例子比例0.9、运行预留2GiB、KV2字节、16token一块、元数据0/对齐1均可配置，其中预留及比例未实测。算得每token147456字节、每块2359296字节、KV预算4652544409字节、1972块/余12697字节。现有Qwen2.5-7B服务器目录未找到，明确选择Qwen3例子；没有更改原负载/tokenizer。
 
 结果新增memory_budget/memory_provenance扩展字段，schema_version仍1。当前teaching耗时不变；容量示例不是4090性能benchmark。未测实际权重VRAM/运行时峰值、未做vLLM部署/耗时校准、多卡分片或MLA/滑窗模型。第13章和test_memory_budget.py验证手算、路径/互斥、服务器配置及结构冲突。
+
+## 第14章：抢占与重算契约
+
+顶层recovery含必填capacity_policy（block/preempt）、可选victim_policy（fewest_generated/newest，默认前者）、recovery_action（只支持recompute）。整个对象省略时block；preempt必须有KV。字段/算法严格校验。容量规则、受害者选择与恢复动作分别配置，不等同于复现师兄完整ksana/sglang策略。
+
+正常准入及可增长Decode回退均失败、GPU空闲时，engine.try_preempt选择受益者与受害者。受害者必须在普通队列、有已提交KV且无执行保护；按当前单引用可释放块数检查是否足够让受益者处理至少1token。候选只有当前生成数和到达序号，无最终长度。释放请求引用后记录保存的cached_tokens并移出普通队列。focus受益者直到完成，不让其他请求重新抢空间；不能自我抢占。容量过小仍报告blocked。
+
+RecoveryController独占FIFO暂停队列、restoring目标、focus和动作记录。普通驻留请求耗尽且无focus时开始FIFO恢复；恢复请求受保护到完成。Recompute是内核专用单成员批级/成员阶段，正常Scheduler快照不含此阶段，不能与P/D混批。范围从0连续重建至暂停前已提交缓存长度，受token/chunk/容量约束；同样reserve/populating/complete，经Predictor预测。无新输出且roofline不含LM head，teaching按每token Prefill成本；不更新原prefill_done、starts、token_times或Scheduler交替状态。恢复后根据是否已有输出回active或waiting。
+
+cached_tokens与生成输出数分别保存；Decode当前最后一个输出尚未处理，不必加入重建。暂停的普通请求进度保持原值，KV表从0恢复，因此不得把prefill_done当恢复游标，游标来自BlockPool已提交cached_tokens。Recompute只构造历史长度/工作量，没有真实token内容或张量。
+
+EventRun/JSON扩展recovery_records、recovery_pending（未恢复目标）和recovery_summary（抢占次数、重算token），schema_version仍1。逻辑输入/输出统计不重复计重算，batch步数包含重算。默认block无恢复记录；ShareGPT requests/steps/summary/estimates保持不变。第14章和test_recovery.py核对时序、历史输出/部分输入、预算、FIFO、失败及预测边界；这是保守进展保护，不是SLO/公平优化。

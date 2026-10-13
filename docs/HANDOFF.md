@@ -4,9 +4,9 @@
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第13章13-memory-budget.md → 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第14章14-recompute-recovery.md → 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
-用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户尚未确认理解第13章，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
+用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户尚未确认理解第14章，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
 ## 当前已实现
 
@@ -17,12 +17,12 @@ AGENTS.md → 本页 → ARCHITECTURE.md → 第13章13-memory-budget.md → 对
 - 独立Predictor：默认teaching保持旧公式，Mixed为P线性耗时加一次D轮时间；可选未校准roofline，两组max计算/访存后相加与开销。模型/算力/带宽/系数可配，结果保存明细。Decode上下文为input+generated-1，无未来输出目标输入。
 - 新增kv_cache.py：KVBlock身份/GPU/有效范围/状态/引用/执行所有者、RequestBlockTable、KVReservation、BlockPool与冻结快照。不是实际KV张量/地址。
 - 可选kv_cache要求gpu_id/block_tokens，再独选人工total_blocks或独立memory_profile，后者按容量比例/权重/预留/KV结构/元数据/对齐换算。准入先保留可增长D再缩P；完全阻塞时尝试可增长D回退。预留→填充→就绪→完成请求释放，支持预留原子容量失败与事务回滚；执行中禁止释放。
-- 容量满无法增长时，等待已有未来事件；无事件则blocked，保存pending_progress/块表，不伪造完成。CLI保存结果再退出2；成功0。summary仅含完成请求，summary_scope标记口径。
+- 默认block容量满无法增长时，等待已有未来事件；无事件则blocked，保存pending_progress/块表，不伪造完成。CLI保存结果再退出2；成功0。summary仅含完成请求，summary_scope标记口径。
 - ShareGPT单轮离线准备、本地Qwen tokenizer、fixed/poisson到达、manifest SHA；基础模拟标准库。summary包含TTFT/ITL/latency最近秩分位数和吞吐；未校准。
 
 ## 当前验证与例子
 
-61测试中59通过，2个分词集成因系统Python缺依赖跳过。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，结果output/sharegpt_kv_regression.json。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
+69测试中67通过，2个分词集成因系统Python缺依赖跳过。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，本步结果output/sharegpt_recovery_regression.json与output/sharegpt_kv_regression.json对照。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -36,7 +36,7 @@ python3 run_simulation.py --config configs/kv_blocked.json --output output/kv_bl
 
 ## 尚未实现
 
-多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、实际容量实测验证、元数据/对齐、外部碎片地址布局、未来增长预留/抢占恢复、SLO准入、真实模型/4090测量和拟合。引用/GPU字段是实际结构，不等于这些机制已启用。当前一池最多一在途事务。
+多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、实际容量实测验证、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、真实模型/4090测量和拟合。引用/GPU字段是实际结构，不等于这些机制已启用。当前一池最多一在途事务。
 
 ## 本地环境
 
@@ -44,10 +44,22 @@ Windows C:/Users/yh/Desktop/sim/llm-serving-lab；WSL /mnt/c/Users/yh/Desktop/si
 
 Qwen tokenizer三份JSON在assets/tokenizers/qwen2.5-7b-instruct；生成负载workloads/generated/sharegpt-100-fixed/requests.json已有100请求。原ShareGPT位于相邻router-simulator/datasets/sharegpt，仅只读。assets、.venv、workloads/generated、output均被Git忽略，新机器不能假定存在。prepare配置和历史学习细节在各章节。
 
-## 最新：服务器4090独立容量profile
+## 服务器4090独立容量profile
 
 configs/rtx4090_memory.json引用configs/profiles/rtx4090_qwen3_8b_bf16.json；来源只读服务器nvidia-smi与现有Qwen3-8B小JSON。6卡各24564MiB，但只模拟1卡。Qwen3是36层、8KV头、head_dim128、BF16，权重张量16381470720字节。此前Qwen2.5-7B目录当前不存在，不虚构同一模型配置。
 
 90%使用比例、2GiB运行时预留、BF16 KV、每块16token、元数据0/对齐1是假设。容量换算1972块，144KiB/token、2.25MiB/块、KV预算4652544409字节。不是vLLM实测块数，权重张量大小仅估计VRAM；teaching耗时仍未校准。memory_budget.py严格解析并计算，结果memory_budget/provenance可复现，禁止profile和人工块数混用。若同时用roofline，KV结构/精度需一致。
 
-新入口：python3 run_simulation.py --config configs/rtx4090_memory.json --output output/rtx4090_memory.json。61测试中59通过、2分词集成跳过；test_memory_budget覆盖公式/对齐/边界、相对路径、互斥、服务器值与模型冲突。配置文件运行时全本地，无需服务器。已有ShareGPT长度为Qwen2.5分词，之后校准Qwen3需对应分词器重准备。下一步先看第13章与假设，不自动部署或继续完整校准。
+新入口：python3 run_simulation.py --config configs/rtx4090_memory.json --output output/rtx4090_memory.json。69测试中67通过、2分词集成跳过；test_memory_budget覆盖公式/对齐/边界、相对路径、互斥、服务器值与模型冲突。配置文件运行时全本地，无需服务器。已有ShareGPT长度为Qwen2.5分词，之后校准Qwen3需对应分词器重准备。容量假设见第13章；不自动部署或继续完整校准。
+
+## 最新：独立抢占选择与重算恢复
+
+顶层recovery配置capacity_policy=block/preempt、victim_policy=fewest_generated/newest、recovery_action=recompute；默认block保持旧结果。preempt必须启用KV，swap明确拒绝。fewest_generated按已生成数升序、同数较晚到达优先；newest选较晚到达者，不使用最终输出目标。容量准入与Decode回退均失败后才选择受害者，只释放未执行、能实际释放足够页面让受益者前进一步的其他请求。
+
+recovery.py保存独立选择纯函数、FIFO恢复队列、restoring与focus；engine实施释放/恢复。暂停保留原prefill_done、首开始时间和输出时间，保存已提交cached_tokens（含处理过的输出上下文）。受益者focus持续到完成；没有驻留工作且focus清空后，FIFO恢复一个请求并保护到完成。新Prefill不会插队抢回空间，避免教学例子的反复踢出，但不声称公平或SLO最优。
+
+Recompute是独占恢复批，受token/chunk/KV预算约束；从0重建到保存的cached_tokens，经同一Predictor收费，不产token、不算LM head、不更新原prefill_done或交替策略状态。恢复完成再回普通Prefill/Decode。仍可能blocked，例如单个请求自己也放不下；禁止自我踢出。共享/COW、交换、跨卡恢复均未启用。
+
+configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms暂停B，A输出4/10/12ms；12–16ms重算B，B输出8/18/20ms。保留B首token8ms，下一间隔10ms；输入逻辑计数4、输出6，额外重算2token另列。输出recovery_records、recovery_pending和recovery_summary；blocked时暂停队列也保留。
+
+验证69测试中67通过、2分词集成跳过；test_recovery覆盖选择、完整及部分Prefill恢复、含历史输出重建、FIFO/小预算、不可恢复阻塞、roofline无LM head及配置。运行python3 run_simulation.py --config configs/recompute.json --output output/recompute.json。阅读第14章流程图/状态图/结构表和编号标记；下一步先讨论恢复代价与策略取舍，不自动实现交换或更多机制。

@@ -86,7 +86,7 @@ class PredictorItem:
     produces_token: bool
 
     def __post_init__(self) -> None:
-        if self.phase not in ("Prefill", "Decode"):
+        if self.phase not in ("Prefill", "Decode", "Recompute"):
             raise ValueError("predictor item 阶段无效")
         if type(self.new_tokens) is not int or self.new_tokens <= 0:
             raise ValueError("new_tokens 必须是正整数")
@@ -96,6 +96,8 @@ class PredictorItem:
             raise ValueError("produces_token 必须是布尔值")
         if self.phase == "Decode" and (self.new_tokens != 1 or not self.produces_token):
             raise ValueError("Decode 每请求处理一个新 token 并产生一个输出")
+        if self.phase == "Recompute" and self.produces_token:
+            raise ValueError("重算仅恢复KV，不能产生新输出token")
 
 
 @dataclass(frozen=True)
@@ -131,7 +133,7 @@ class TeachingPredictor:
             raise ValueError("不能预测空 batch")
         # 【重点1：兼容旧实验】Decode整轮固定耗时，不能乘以成员数量。
         # 【混合教学假设】输入块线性时间加一次Decode时间，不代表真实融合执行效率。
-        prefill_tokens = sum(item.new_tokens for item in items if item.phase == "Prefill")
+        prefill_tokens = sum(item.new_tokens for item in items if item.phase in ("Prefill", "Recompute"))
         has_decode = any(item.phase == "Decode" for item in items)
         duration = prefill_tokens * self.timing.prefill_ms_per_input_token
         if has_decode:

@@ -11,6 +11,7 @@ from .scheduler import Policy, SchedulerConfig, SchedulerProfile
 from .predictor import Calibration, DeviceProfile, ModelProfile, PredictorSettings
 from .kv_cache import KVConfig
 from .memory_budget import MemoryBudget, MemoryDevice, MemoryModel, MemorySettings, resolve_budget
+from .recovery import RecoveryConfig
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class Experiment:
     kv_config: KVConfig | None = None
     memory_budget: MemoryBudget | None = None
     memory_provenance: dict | None = None
+    recovery_config: RecoveryConfig = RecoveryConfig()
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -71,8 +73,11 @@ def load_experiment(path: Path) -> Experiment:
     # 【重点 1：先读配置，不让执行内核解析 JSON。】
     config_path = path.resolve()
     raw = _fields(_read_json(config_path), {"workload"}, "config",
-                  {"timing", "predictor", "kv_cache", "scheduler", "scheduler_profiles", "workers"})
+                  {"timing", "predictor", "kv_cache", "recovery", "scheduler", "scheduler_profiles", "workers"})
     workload = _fields(raw["workload"], {"path"}, "workload")
+    recovery = _fields(raw.get("recovery", {"capacity_policy": "block"}), {"capacity_policy"},
+                       "recovery", {"victim_policy", "recovery_action"})
+    recovery_config = RecoveryConfig(**recovery)
     kv_config = None
     memory_budget = None
     memory_provenance = None
@@ -101,6 +106,8 @@ def load_experiment(path: Path) -> Experiment:
             memory_provenance = spec.get("provenance")
             if memory_provenance is not None and not isinstance(memory_provenance, dict):
                 raise ValueError("memory_profile.provenance必须是对象")
+    if recovery_config.capacity_policy == "preempt" and kv_config is None:
+        raise ValueError("preempt恢复策略需要kv_cache配置")
     # 【方案重点】兼容旧配置，但新旧写法不能混用，防止两个地方设置不同策略。
     if "scheduler" in raw:
         if "scheduler_profiles" in raw or "workers" in raw:
@@ -213,4 +220,4 @@ def load_experiment(path: Path) -> Experiment:
                       config_path, workload_path, metadata, scheduler_config.max_batch_requests,
                       scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens,
                       profile, profile_name, worker_id, worker_role, predictor_settings, kv_config,
-                      memory_budget, memory_provenance)
+                      memory_budget, memory_provenance, recovery_config)

@@ -122,3 +122,5 @@ python3 -m unittest discover -s tests -q
 test_memory_budget.py核对手算、元数据/对齐、无预算/不足一块、非法参数、profile相对路径/互斥、服务器profile结果及Predictor结构冲突。schema_version仍1，新增memory_budget/memory_provenance字段；不改变现有人工块数例子与默认耗时。
 
 后续固定实际模型/精度/服务版本后，测运行时占用和KV块数来验证容量，再做耗时校准；当前只完成独立可配置预算与一个有来源的4090示例。
+
+后续补充：第14章新增可选preempt＋recompute恢复；本章例子默认block，原阻塞结果和容量公式保持不变。见[抢占与重算恢复](14-recompute-recovery.md)。
