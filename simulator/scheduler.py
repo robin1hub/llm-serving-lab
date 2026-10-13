@@ -5,7 +5,8 @@ from typing import Literal
 
 
 Phase = Literal["Prefill", "Decode"]
-Policy = Literal["prefill_first", "decode_first"]
+Policy = Literal["prefill_first", "decode_first", "alternating"]
+Role = Literal["P", "D", "Mix"]
 
 
 @dataclass(frozen=True)
@@ -16,13 +17,42 @@ class SchedulerConfig:
     prefill_chunk_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if self.policy not in ("prefill_first", "decode_first"):
-            raise ValueError("policy 必须是 prefill_first 或 decode_first")
+        if self.policy not in ("prefill_first", "decode_first", "alternating"):
+            raise ValueError("policy 必须是 prefill_first、decode_first 或 alternating")
         # None 表示不启用该限制，兼容旧实验；这些限制都不代表 KV 容量。
         for name in ("max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"):
             limit = getattr(self, name)
             if limit is not None and (type(limit) is not int or limit <= 0):
                 raise ValueError(f"{name} 必须是正整数或 null")
+
+
+@dataclass(frozen=True)
+class SchedulerProfile:
+    """按能力配置算法；P/D 方案可以独立定义，Mix 需要三个槽都存在。"""
+
+    prefill_algorithm: str | None = None
+    decode_algorithm: str | None = None
+    mix_algorithm: str | None = None
+    constraints: SchedulerConfig = SchedulerConfig()
+
+    def __post_init__(self) -> None:
+        for name, supported in (("prefill_algorithm", ("fcfs_chunked",)),
+                                ("decode_algorithm", ("round_robin",)),
+                                ("mix_algorithm", ("prefill_first", "decode_first", "alternating"))):
+            value = getattr(self, name)
+            if value is not None and value not in supported:
+                raise ValueError(f"{name} 不支持算法 {value!r}")
+        if all(value is None for value in (self.prefill_algorithm, self.decode_algorithm, self.mix_algorithm)):
+            raise ValueError("调度方案至少指定一个算法")
+
+    def validate_role(self, role: Role) -> None:
+        if role not in ("P", "D", "Mix"):
+            raise ValueError("worker.role 必须是 P、D 或 Mix")
+        required = {"P": ("prefill_algorithm",), "D": ("decode_algorithm",),
+                    "Mix": ("prefill_algorithm", "decode_algorithm", "mix_algorithm")}[role]
+        for field in required:
+            if getattr(self, field) is None:
+                raise ValueError(f"{role} worker 的方案缺少 {field}")
 
 
 @dataclass(frozen=True)
@@ -58,21 +88,43 @@ class BatchPlan:
 
 
 class Scheduler:
-    def __init__(self, config: SchedulerConfig) -> None:
-        self.config = config
+    def __init__(
+        self, config: SchedulerConfig, *, profile: SchedulerProfile | None = None,
+        role: Role = "Mix",
+    ) -> None:
+        self.profile = profile or SchedulerProfile("fcfs_chunked", "round_robin", config.policy, config)
+        self.profile.validate_role(role)
+        self.config = self.profile.constraints
+        self.role = role
+        self.last_completed_phase: Phase | None = None
+
+    def on_batch_completed(self, plan: BatchPlan) -> None:
+        # 有状态策略仅在完成后更新；重复 decide 不会偷偷消耗交替机会。
+        self.last_completed_phase = plan.phase
 
     def decide(self, snapshot: SchedulingSnapshot) -> BatchPlan | None:
         # 【重点 1：先选阶段】空快照返回 Idle（None），没有修改任何队列。
         prefill = snapshot.waiting_prefill
         decode = snapshot.ready_decode
-        if prefill and (self.config.policy == "prefill_first" or not decode):
+        if (self.role == "P" and decode) or (self.role == "D" and prefill):
+            raise ValueError("worker 收到了角色不支持的就绪阶段")
+        # 【角色重点】只有一个阶段就绪时用该阶段算法；两者同时就绪才调用 Mix 槽。
+        choose_prefill = bool(prefill) and not decode
+        if prefill and decode:
+            algorithm = self.profile.mix_algorithm
+            choose_prefill = algorithm == "prefill_first" or (
+                algorithm == "alternating" and self.last_completed_phase != "Prefill"
+            )
+        if choose_prefill:
             # 【预算重点 1】剩余输入、整轮预算、单请求 chunk 三者取最小值。
             task = prefill[0]
             limits = [task.token_count]
             limits.extend(limit for limit in (self.config.max_tokens_per_batch,
                                                self.config.prefill_chunk_tokens) if limit is not None)
             selected = ReadyTask(task.request_id, "Prefill", min(limits), task.range_start)
-            reason = "Prefill 优先或没有 Decode 候选"
+            reason = "仅 Prefill 就绪：fcfs_chunked"
+            if decode:
+                reason = f"fcfs_chunked；Mix={self.profile.mix_algorithm} 选择 Prefill"
             if selected.token_count < task.token_count:
                 reason += "；按 token 预算/chunk 分块"
             return BatchPlan((selected,), reason)
@@ -86,6 +138,7 @@ class Scheduler:
                                            self.config.max_tokens_per_batch) if limit is not None)
         members = decode[:min(limits)]
         reason = "全部 Decode 候选入选" if len(members) == len(decode) else "请求数/token 上限，其余留待下一轮"
+        reason = (f"Mix={self.profile.mix_algorithm} 选择 Decode；" if prefill else "仅 Decode 就绪；") + reason
         return BatchPlan(members, reason)
 
 

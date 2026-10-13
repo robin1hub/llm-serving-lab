@@ -23,7 +23,8 @@ def main() -> None:
         run = simulate_events(experiment.requests, experiment.timing, policy=experiment.policy,
                               max_batch_requests=experiment.max_batch_requests,
                               max_tokens_per_batch=experiment.max_tokens_per_batch,
-                              prefill_chunk_tokens=experiment.prefill_chunk_tokens)
+                              prefill_chunk_tokens=experiment.prefill_chunk_tokens,
+                              scheduler_profile=experiment.scheduler_profile)
         summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
@@ -33,6 +34,16 @@ def main() -> None:
             "workload_path": str(experiment.workload_path),
             "workload_metadata": experiment.workload_metadata,
             "policy": experiment.policy,
+            "worker": {"id": experiment.worker_id, "role": experiment.worker_role,
+                       "scheduler_profile": experiment.profile_name},
+            # 只保存用户配置的约束，不把兼容旧接口的 policy 放入 constraints。
+            "resolved_scheduler_profile": {
+                "prefill_algorithm": experiment.scheduler_profile.prefill_algorithm,
+                "decode_algorithm": experiment.scheduler_profile.decode_algorithm,
+                "mix_algorithm": experiment.scheduler_profile.mix_algorithm,
+                "constraints": {"max_batch_requests": experiment.max_batch_requests,
+                                "max_tokens_per_batch": experiment.max_tokens_per_batch,
+                                "prefill_chunk_tokens": experiment.prefill_chunk_tokens}},
             "scheduler": {"policy": experiment.policy, "max_batch_requests": experiment.max_batch_requests,
                           "max_tokens_per_batch": experiment.max_tokens_per_batch,
                           "prefill_chunk_tokens": experiment.prefill_chunk_tokens,

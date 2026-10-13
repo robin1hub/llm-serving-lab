@@ -3,24 +3,28 @@
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 from .models import Request, Timing
 from .dataset import sha256_file
-from .scheduler import SchedulerConfig
+from .scheduler import Policy, SchedulerConfig, SchedulerProfile
 
 
 @dataclass(frozen=True)
 class Experiment:
     requests: tuple[Request, ...]
     timing: Timing
-    policy: Literal["prefill_first", "decode_first"]
+    policy: Policy
     config_path: Path
     workload_path: Path
     workload_metadata: dict | None = None
     max_batch_requests: int | None = None
     max_tokens_per_batch: int | None = None
     prefill_chunk_tokens: int | None = None
+    scheduler_profile: SchedulerProfile | None = None
+    profile_name: str = "legacy"
+    worker_id: str = "worker_0"
+    worker_role: str = "Mix"
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -59,20 +63,52 @@ def _fields(value: object, expected: set[str], location: str, optional: set[str]
 def load_experiment(path: Path) -> Experiment:
     # 【重点 1：先读配置，不让执行内核解析 JSON。】
     config_path = path.resolve()
-    raw = _fields(_read_json(config_path), {"workload", "scheduler", "timing"}, "config")
+    raw = _fields(_read_json(config_path), {"workload", "timing"}, "config",
+                  {"scheduler", "scheduler_profiles", "workers"})
     workload = _fields(raw["workload"], {"path"}, "workload")
-    scheduler = _fields(raw["scheduler"], {"policy"}, "scheduler",
-                        {"max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"})
+    # 【方案重点】兼容旧配置，但新旧写法不能混用，防止两个地方设置不同策略。
+    if "scheduler" in raw:
+        if "scheduler_profiles" in raw or "workers" in raw:
+            raise ValueError("scheduler 与 scheduler_profiles/workers 不能混用")
+        scheduler = _fields(raw["scheduler"], {"policy"}, "scheduler",
+                            {"max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"})
+        scheduler_config = SchedulerConfig(**scheduler)
+        profile = SchedulerProfile("fcfs_chunked", "round_robin", scheduler_config.policy, scheduler_config)
+        profile_name, worker_id, worker_role = "legacy", "worker_0", "Mix"
+    else:
+        profiles = raw.get("scheduler_profiles")
+        if not isinstance(profiles, dict) or not profiles:
+            raise ValueError("scheduler_profiles 必须是非空方案对象")
+        parsed_profiles = {}
+        for name, value in profiles.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("方案名必须非空")
+            spec = _fields(value, {"constraints"}, f"profile.{name}",
+                           {"prefill_algorithm", "decode_algorithm", "mix_algorithm"})
+            limits = _fields(spec["constraints"], set(), f"profile.{name}.constraints",
+                             {"max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"})
+            parsed_profiles[name] = SchedulerProfile(
+                spec.get("prefill_algorithm"), spec.get("decode_algorithm"), spec.get("mix_algorithm"),
+                SchedulerConfig(**limits))
+        workers = raw.get("workers")
+        if not isinstance(workers, list) or len(workers) != 1:
+            raise ValueError("当前只支持一个逻辑 worker；多 worker 需要后续路由和交接")
+        worker = _fields(workers[0], {"id", "role", "scheduler_profile"}, "workers[0]")
+        worker_id, worker_role, profile_name = worker["id"], worker["role"], worker["scheduler_profile"]
+        if not isinstance(worker_id, str) or not worker_id.strip():
+            raise ValueError("worker.id 必须是非空字符串")
+        if not isinstance(profile_name, str) or profile_name not in parsed_profiles:
+            raise ValueError("worker 引用了不存在的 scheduler_profile")
+        profile = parsed_profiles[profile_name]
+        profile.validate_role(worker_role)
+        if worker_role != "Mix":
+            raise ValueError("当前完整请求运行仅支持 Mix worker；P/D 需要后续 P→D 交接机制")
+        scheduler_config = profile.constraints
     timing = _fields(raw["timing"],
                      {"prefill_ms_per_input_token", "decode_ms_per_step"}, "timing")
     if not isinstance(workload["path"], str) or not workload["path"].strip():
         raise ValueError("workload.path 必须是非空路径字符串")
-    policy = scheduler["policy"]
-    if policy not in ("prefill_first", "decode_first"):
-        raise ValueError("scheduler.policy 必须是 prefill_first 或 decode_first")
-    scheduler_config = SchedulerConfig(policy, scheduler.get("max_batch_requests"),
-                                       scheduler.get("max_tokens_per_batch"),
-                                       scheduler.get("prefill_chunk_tokens"))
+    policy = profile.mix_algorithm
 
     # 【重点 2：负载相对路径以配置文件所在目录为基准，不依赖运行目录。】
     workload_path = (config_path.parent / workload["path"]).resolve()
@@ -103,6 +139,7 @@ def load_experiment(path: Path) -> Experiment:
             raise ValueError("负载与 manifest 请求数量不匹配")
     # 【重点 3：复用原 Request / Timing 的校验，返回不可变实验输入。】
     return Experiment(tuple(requests), Timing(**timing),
-                      cast(Literal["prefill_first", "decode_first"], policy),
+                      cast(Policy, policy),
                       config_path, workload_path, metadata, scheduler_config.max_batch_requests,
-                      scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens)
+                      scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens,
+                      profile, profile_name, worker_id, worker_role)

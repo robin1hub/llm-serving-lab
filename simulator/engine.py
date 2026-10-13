@@ -3,11 +3,10 @@
 from collections import deque
 from dataclasses import dataclass, field
 import heapq
-from typing import Literal
 
 from .models import BatchRun, BatchStep
 from .models import Event, Request, Result, Timing
-from .scheduler import BatchPlan, ReadyTask, Scheduler, SchedulerConfig, SchedulingSnapshot, rotate_after_completion
+from .scheduler import BatchPlan, Policy, ReadyTask, Scheduler, SchedulerConfig, SchedulerProfile, SchedulingSnapshot, rotate_after_completion
 
 
 @dataclass(order=True, frozen=True)
@@ -32,14 +31,15 @@ class EventRun:
 
 def simulate_events(
     requests: tuple[Request, ...], timing: Timing, *,
-    policy: Literal["prefill_first", "decode_first"] = "prefill_first",
+    policy: Policy = "prefill_first",
     max_batch_requests: int | None = None,
     max_tokens_per_batch: int | None = None,
     prefill_chunk_tokens: int | None = None,
+    scheduler_profile: SchedulerProfile | None = None,
 ) -> EventRun:
     """单卡事件执行；Scheduler 只提计划，内核负责提交和完成。"""
     scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests, max_tokens_per_batch,
-                                          prefill_chunk_tokens))
+                                          prefill_chunk_tokens), profile=scheduler_profile)
     if len({item.request_id for item in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
@@ -121,6 +121,8 @@ def simulate_events(
                     active.append(request_id)
             if event.phase == "Decode":
                 active = list(rotate_after_completion(tuple(active), event.request_ids))
+            # 【交替重点】进度提交完成后才通知策略；查询计划本身不能切换轮次。
+            scheduler.on_batch_completed(event.plan)
             busy = False
             trace.append(f"  完成后 active={active}；GPU 空闲")
             wake_scheduler()

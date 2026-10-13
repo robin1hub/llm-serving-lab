@@ -1,5 +1,24 @@
 {
-  "workload": {"path": "../workloads/two_requests.json"},
-  "scheduler": {"policy": "decode_first"},
-  "timing": {"prefill_ms_per_input_token": 2.0, "decode_ms_per_step": 2.0}
+  "workload": {
+    "path": "../workloads/two_requests.json"
+  },
+  "timing": {
+    "prefill_ms_per_input_token": 2.0,
+    "decode_ms_per_step": 2.0
+  },
+  "scheduler_profiles": {
+    "mix_default": {
+      "prefill_algorithm": "fcfs_chunked",
+      "decode_algorithm": "round_robin",
+      "mix_algorithm": "decode_first",
+      "constraints": {}
+    }
+  },
+  "workers": [
+    {
+      "id": "worker_0",
+      "role": "Mix",
+      "scheduler_profile": "mix_default"
+    }
+  ]
 }

@@ -30,6 +30,10 @@ class ConfigurationTests(unittest.TestCase):
                 self.assertEqual(report["timing_source"], "teaching_assumption")
                 self.assertEqual(report["summary"]["completed_requests"], 2)
                 self.assertEqual(report["summary"]["total_output_tokens"], 5)
+                self.assertEqual(report["worker"], {"id": "worker_0", "role": "Mix",
+                                                    "scheduler_profile": "mix_default"})
+                self.assertEqual(report["resolved_scheduler_profile"]["mix_algorithm"], report["policy"])
+                self.assertNotIn("policy", report["resolved_scheduler_profile"]["constraints"])
 
     def test_rejects_invalid_config_and_workload(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
