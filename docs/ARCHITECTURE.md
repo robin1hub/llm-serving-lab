@@ -34,6 +34,7 @@ flowchart LR
 | simulator/config.py | 校验实验JSON、读取标准负载、核对manifest | 不修改请求进度 |
 | simulator/scheduler.py | SchedulerProfile、约束、快照、计划、只读选批、完成反馈、轮转纯函数 | 不分配KV、不生成token、不推进时间 |
 | simulator/engine.py | 持有队列与进度、提交计划、处理事件与完成 | 不解析原始文本或拟合真实耗时 |
+| simulator/kv_cache.py | KVConfig/Block/Table/Reservation、单GPU池、只读准入、事务与冻结快照 | 不选原始候选、不计算token内容、不进行网络传输 |
 | simulator/predictor.py | 不可变工作描述、模型/硬件/修正参数、教学或roofline估算 | 不选批、不分配KV、不修改进度或时钟 |
 | simulator/metrics.py | 从完成结果计算摘要 | 不改变事件/调度状态 |
 | run_simulation.py | 连接加载、执行、统计、输出 | 不实现第二套调度机制 |
@@ -86,7 +87,7 @@ TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所
 
 ## 明确尚未实现
 
-KV容量/页分配、容量阻塞、抢占恢复、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
+共享KV/COW/传输保护、实际显存字节换算、抢占恢复、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
 
 ## 验证与交接入口
 
@@ -97,8 +98,22 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第11章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第12章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
 
 ## 第11章混合执行补充
 
 提交遍历items，仅取走Prefill成员。完成按item.phase更新；中间输入块返回waiting、最终输入块才产首token。只轮转本轮Decode成员，新Prefill进入active不算已服务Decode。每轮仍一个完成事件，执行期间到达不得插入。roofline整体估算Mixed成员，权重/开销按整批一次；教学相加规则只作近似。test_mixed.py验证预算、完成/轮转、上下文、手算与到达边界。混合轮可减少次数，但不保证延迟/吞吐改善。详见第11章。
+
+## 第12章：KV块契约
+
+可选顶层kv_cache严格要求gpu_id/total_blocks/block_tokens，均非空/正整数；省略禁用，null不合法。一池一个GPU，total_blocks直接表示可用于KV的物理块数，尚未从硬件字节容量推导。
+
+BlockPool独占活块、已提交请求块表、在途事务和ID。KVBlock保存设备/块ID、逻辑页序号、全局token有效范围、Reserved/Populating/Ready、request_refs和execution_owner；记录冻结且替换更新。块ID单调不复用，GPU+ID一起解释身份。当前每块仅一个请求引用；没有共享/COW/跨卡副本或传输接口。
+
+admit只读删减候选，先留可增长Decode，剩余空间缩小Prefill。无成员时内核尝试过滤掉容量阻塞Decode的回退候选；不跳过FCFS Prefill队首。预测针对准入后计划。reserve先全量校验，创建新块并保护写尾块；begin_populating启动填充；complete才提交有效范围/请求表并解除执行保护；request完成后解除引用回收。rollback删除新块、还原旧块，已提交表不变。事务只能完成/回滚一次，单池当前最多一在途事务。
+
+必须保持：活块数不超过total_blocks，空闲数不负；已提交表中的块存在/有请求引用，逻辑范围覆盖cached_tokens；未完成事务不增加cached_tokens；释放执行中的请求报错。Reserved/Populating映射在reservation.writes中，快照同时导出reservations。碎片仅统计Ready块的尾部空位，峰值包括曾预留块。
+
+无准入计划时不制造无进展事件，等待已有未来事件；事件耗尽且有未完成请求则status=blocked。结果保留pending_progress与KV快照；requests/summary仅统计完成请求，summary_scope明确completed_requests_only；CLI保存JSON再返回2。成功返回0。历史每个KV动作保存完整冻结快照，旧配置禁用时kv_final=null/kv_records为空。schema_version仍1，扩展status/pending/kv字段。
+
+KV分配与状态变化无独立耗时，未模拟张量/地址/外部空洞布局、元数据/对齐字节、共享/COW、未来增长预留或抢占。第12章与test_kv_cache.py是阅读/验证入口。用户明确希望支持后续多卡多状态，不回退为只计总token的模型；扩展机制逐步实现。

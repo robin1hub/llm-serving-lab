@@ -11,6 +11,7 @@ simulator/             models.py 数据结构、config.py 配置、engine.py 事
                        metrics.py 结果汇总
                        scheduler.py 只读选批与人数上限
                        predictor.py 独立耗时预测与计算明细
+                       kv_cache.py KV块身份、请求表、准入与生命周期
 configs/               实验配置
 workloads/             请求数据
  tests/                当前实现的测试
@@ -46,7 +47,8 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 9. [Worker 与调度方案](docs/chapters/09-worker-profiles.md)：独立算法槽、角色引用、完成反馈与阶段交替。
 10. [Predictor 耗时预测](docs/chapters/10-predictor.md)：工作量、上下文、算力/带宽、修正系数与手算。
 11. [混合 batch](docs/chapters/11-mixed-batches.md)：剩余预算、同轮完成、成员阶段与耗时对照。
+12. [KV块与容量准入](docs/chapters/12-kv-blocks.md)：物理块身份、请求表、预留/填充/就绪/释放与阻塞。
 
-现在主要阅读第 11 章。运行 `python3 run_simulation.py --config configs/worker_mixed.json --output output/worker_mixed.json` 看教学时间线，或运行 `configs/predictor_mixed.json` 看roofline明细。旧实验结果保持兼容；新硬件例子仍是未校准的虚拟参数。先读流程图与手算表，再看重点代码。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
+现在主要阅读第 12 章。运行 `python3 run_simulation.py --config configs/kv_blocks.json --output output/kv_blocks.json` 查看块的完整生命周期；`configs/kv_blocked.json` 展示容量阻塞，保存诊断后以退出码2结束。先读时间表和结构图，再看重点代码。当前仍单GPU，引用/设备字段为后续扩展保留，共享、COW和传输尚未实现。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
 
-当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替与混合 batch，耗时尚未校准。后续计划：简单 KV 显存容量和 4090 校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。
+当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替、混合 batch与KV分页准入，耗时尚未校准。后续计划：共享/COW、真实容量换算和4090校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。

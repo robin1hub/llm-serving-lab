@@ -8,6 +8,7 @@ from .models import BatchRun, BatchStep
 from .models import Event, Request, Result, Timing, _validate_time
 from .scheduler import BatchPlan, Policy, ReadyTask, Scheduler, SchedulerConfig, SchedulerProfile, SchedulingSnapshot, rotate_after_completion
 from .predictor import BatchEstimate, Predictor, PredictorItem, TeachingPredictor
+from .kv_cache import BlockPool, KVConfig, KVRecord, KVReservation, KVSnapshot
 
 
 @dataclass(order=True, frozen=True)
@@ -21,6 +22,15 @@ class _ScheduledEvent:
     request_ids: tuple[str, ...] = field(compare=False)
     phase: str = field(default="", compare=False)
     plan: BatchPlan | None = field(default=None, compare=False)
+    reservation: KVReservation | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class PendingProgress:
+    request_id: str
+    prefill_done: int
+    token_times_ms: tuple[float, ...]
+    start_ms: float | None
 
 
 @dataclass(frozen=True)
@@ -29,6 +39,11 @@ class EventRun:
     trace: tuple[str, ...]
     plans: tuple[BatchPlan, ...]
     estimates: tuple[BatchEstimate, ...] = ()
+    kv_records: tuple[KVRecord, ...] = ()
+    kv_final: KVSnapshot | None = None
+    status: str = "completed"
+    pending_request_ids: tuple[str, ...] = ()
+    pending_progress: tuple[PendingProgress, ...] = ()
 
 
 def simulate_events(
@@ -39,11 +54,20 @@ def simulate_events(
     prefill_chunk_tokens: int | None = None,
     scheduler_profile: SchedulerProfile | None = None,
     predictor: Predictor | None = None,
+    kv_config: KVConfig | None = None,
 ) -> EventRun:
     """单卡事件执行；Scheduler 只提计划，内核负责提交和完成。"""
     scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests, max_tokens_per_batch,
                                           prefill_chunk_tokens), profile=scheduler_profile)
     duration_predictor = predictor if predictor is not None else TeachingPredictor(timing)
+    kv_pool = BlockPool(kv_config) if kv_config is not None else None
+    kv_records: list[KVRecord] = []
+
+    def record_kv(time_ms: float, action: str) -> None:
+        if kv_pool is not None:
+            kv_records.append(KVRecord(time_ms, action, kv_pool.snapshot()))
+
+    record_kv(0, "initial")
     if len({item.request_id for item in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
@@ -68,11 +92,11 @@ def simulate_events(
     now_ms = 0.0
 
     def schedule(time_ms: float, kind: str, ids: tuple[str, ...] = (), phase: str = "",
-                 plan: BatchPlan | None = None) -> None:
+                 plan: BatchPlan | None = None, reservation: KVReservation | None = None) -> None:
         nonlocal sequence
         # 同时间先登记到达，再结算完成，最后调度；与 P/D 策略优先级不同。
         priority = {"arrival": 0, "complete": 1, "wakeup": 2}[kind]
-        heapq.heappush(future, _ScheduledEvent(time_ms, priority, sequence, kind, ids, phase, plan))
+        heapq.heappush(future, _ScheduledEvent(time_ms, priority, sequence, kind, ids, phase, plan, reservation))
         sequence += 1
 
     def wake_scheduler() -> None:
@@ -102,6 +126,10 @@ def simulate_events(
         # 【重点 4：完成通知到来后，才记 token、退出请求并释放 GPU。】
         elif event.kind == "complete":
             assert event.plan is not None  # 完成的是启动时固定的计划，不重新选成员。
+            if kv_pool is not None:
+                assert event.reservation is not None
+                kv_pool.complete(event.reservation)
+                record_kv(now_ms, "ready")
             for item in event.plan.items:
                 request_id = item.request_id
                 if item.phase == "Prefill":
@@ -122,6 +150,9 @@ def simulate_events(
                     records[request_id].append(Event(now_ms, "请求完成"))
                     if request_id in active:
                         active.remove(request_id)
+                    if kv_pool is not None:
+                        kv_pool.release_request(request_id)
+                        record_kv(now_ms, f"release:{request_id}")
                 elif item.phase == "Prefill":
                     active.append(request_id)
             # 【混合完成重点】只轮转本轮实际Decode成员，新进入active的Prefill不算已服务。
@@ -147,6 +178,21 @@ def simulate_events(
             plan = scheduler.decide(snapshot)
             if plan is None:
                 continue
+            # 【KV重点1】选批只提候选，容量模块可缩块/删成员；未准入不修改队列。
+            if kv_pool is not None:
+                plan = kv_pool.admit(plan)
+                if plan is None:
+                    # 队首Prefill放不下时，尝试可增长的Decode释放空间；不抢占任何请求。
+                    ready_decode = tuple(item for item in snapshot.ready_decode
+                        if kv_pool.additional_blocks(item.request_id, item.token_count) <= kv_pool.free_blocks)
+                    fallback = scheduler.decide(SchedulingSnapshot((), ready_decode))
+                    plan = kv_pool.admit(fallback) if fallback is not None else None
+                    if plan is not None:
+                        plan = BatchPlan(plan.items, plan.reason + "；KV阻塞时回退Decode")
+                if plan is None:
+                    trace.append("  KV容量阻塞：无可准入计划；等待未来到达，否则结束为blocked")
+                    record_kv(now_ms, "blocked")
+                    continue
             members = plan.request_ids
             phase = plan.phase
             trace.append(f"  候选 Prefill={list(waiting)}，Decode={active}；"
@@ -170,7 +216,18 @@ def simulate_events(
             _validate_time("完成时间", end_ms, allow_zero=False)
             if end_ms <= now_ms:
                 raise ValueError("预测耗时过小，无法推进模拟时钟")
-            # 【提交重点】预测完成再取走请求；本步仍无 KV 容量检查。
+            # 【KV重点2】预测成功后原子预留，在事件完成前不提交有效KV范围。
+            reservation = None
+            if kv_pool is not None:
+                reservation = kv_pool.reserve(plan)
+                record_kv(now_ms, "reserved")
+                try:
+                    kv_pool.begin_populating(reservation)
+                except Exception:
+                    kv_pool.rollback(reservation)
+                    raise
+                record_kv(now_ms, "populating")
+            # 【提交重点】准入/预测/预留成功后，才取走请求。
             # 【混合提交重点】整批标签可能是Mixed，按成员阶段取走Prefill并记录首次开始。
             for item in plan.items:
                 if item.phase != "Prefill":
@@ -190,12 +247,19 @@ def simulate_events(
             steps.append(BatchStep(now_ms, end_ms, phase, members))
             plans.append(plan)
             estimates.append(estimate)
-            schedule(end_ms, "complete", members, phase, plan)
+            schedule(end_ms, "complete", members, phase, plan, reservation)
             trace.append(f"  启动 {phase} {list(members)}；注册 {end_ms:g}ms 完成通知")
 
     # 辅助封装：只把记录转换为原有结果类型，方便与旧模型对照。
+    completed = tuple(item for item in ordered if len(token_times[item.request_id]) == item.output_tokens)
+    pending = tuple(item.request_id for item in ordered if len(token_times[item.request_id]) < item.output_tokens)
+    # 容量满时保留已完成结果与块表，不假装所有请求完成，也不无限安排唤醒事件。
     results = tuple(
         Result(item, tuple(records[item.request_id]), tuple(token_times[item.request_id]), starts[item.request_id])
-        for item in ordered
+        for item in completed
     )
-    return EventRun(BatchRun(results, tuple(steps)), tuple(trace), tuple(plans), tuple(estimates))
+    return EventRun(BatchRun(results, tuple(steps)), tuple(trace), tuple(plans), tuple(estimates),
+                    tuple(kv_records), kv_pool.snapshot() if kv_pool is not None else None,
+                    "blocked" if pending else "completed", pending,
+                    tuple(PendingProgress(item, prefill_done[item], tuple(token_times[item]), starts.get(item))
+                          for item in pending))

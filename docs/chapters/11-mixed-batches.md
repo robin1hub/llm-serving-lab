@@ -1,5 +1,7 @@
 # 第11章：同一轮的混合 batch
 
+当前可选KV块准入与生命周期已加入，详见[第12章](12-kv-blocks.md)；本章例子省略KV配置，保留原结果。
+
 新增 `mix_algorithm: mixed_decode_first`：先选Decode，再用剩余预算加入一个Prefill块。仍是一个逻辑Mix worker，未实现KV容量、传输、抢占和SLO准入，耗时未校准。
 
 ## 1. 与交替有什么不同

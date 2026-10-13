@@ -1,0 +1,14 @@
+[
+  {
+    "request_id": "A",
+    "arrival_ms": 0,
+    "input_tokens": 2,
+    "output_tokens": 3
+  },
+  {
+    "request_id": "B",
+    "arrival_ms": 1,
+    "input_tokens": 3,
+    "output_tokens": 2
+  }
+]

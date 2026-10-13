@@ -9,6 +9,7 @@ from .models import Request, Timing
 from .dataset import sha256_file
 from .scheduler import Policy, SchedulerConfig, SchedulerProfile
 from .predictor import Calibration, DeviceProfile, ModelProfile, PredictorSettings
+from .kv_cache import KVConfig
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class Experiment:
     worker_id: str = "worker_0"
     worker_role: str = "Mix"
     predictor_settings: PredictorSettings = PredictorSettings()
+    kv_config: KVConfig | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -66,8 +68,12 @@ def load_experiment(path: Path) -> Experiment:
     # 【重点 1：先读配置，不让执行内核解析 JSON。】
     config_path = path.resolve()
     raw = _fields(_read_json(config_path), {"workload"}, "config",
-                  {"timing", "predictor", "scheduler", "scheduler_profiles", "workers"})
+                  {"timing", "predictor", "kv_cache", "scheduler", "scheduler_profiles", "workers"})
     workload = _fields(raw["workload"], {"path"}, "workload")
+    kv_config = None
+    if "kv_cache" in raw:
+        kv = _fields(raw["kv_cache"], {"gpu_id", "total_blocks", "block_tokens"}, "kv_cache")
+        kv_config = KVConfig(**kv)
     # 【方案重点】兼容旧配置，但新旧写法不能混用，防止两个地方设置不同策略。
     if "scheduler" in raw:
         if "scheduler_profiles" in raw or "workers" in raw:
@@ -168,4 +174,4 @@ def load_experiment(path: Path) -> Experiment:
                       cast(Policy, policy),
                       config_path, workload_path, metadata, scheduler_config.max_batch_requests,
                       scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens,
-                      profile, profile_name, worker_id, worker_role, predictor_settings)
+                      profile, profile_name, worker_id, worker_role, predictor_settings, kv_config)

@@ -26,11 +26,19 @@ def main() -> None:
                               max_tokens_per_batch=experiment.max_tokens_per_batch,
                               prefill_chunk_tokens=experiment.prefill_chunk_tokens,
                               scheduler_profile=experiment.scheduler_profile,
-                              predictor=build_predictor(experiment.predictor_settings, experiment.timing))
+                              predictor=build_predictor(experiment.predictor_settings, experiment.timing),
+                              kv_config=experiment.kv_config)
         summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
             "schema_version": 1,
+            "status": run.status,
+            "summary_scope": "completed_requests_only" if run.status == "blocked" else "all_requests",
+            "pending_request_ids": run.pending_request_ids,
+            "pending_progress": [asdict(progress) for progress in run.pending_progress],
+            "kv_cache": asdict(experiment.kv_config) if experiment.kv_config is not None else None,
+            "kv_final": asdict(run.kv_final) if run.kv_final is not None else None,
+            "kv_records": [asdict(record) for record in run.kv_records],
             "timing_source": ("teaching_assumption" if experiment.predictor_settings.kind == "teaching"
                               else "uncalibrated_roofline"),
             "predictor": asdict(experiment.predictor_settings),
@@ -82,6 +90,8 @@ def main() -> None:
               f"ITL {result.inter_token_intervals_ms}ms，总延迟 {result.latency_ms:g}ms")
     print_summary(summary)
     print(f"结果已保存：{args.output.resolve()}（{report['timing_source']}，未校准）")
+    if run.status == "blocked":
+        parser.exit(2, f"KV容量阻塞，未完成请求：{list(run.pending_request_ids)}；结果已保存，summary仅统计完成请求。\n")
 
 
 if __name__ == "__main__":
