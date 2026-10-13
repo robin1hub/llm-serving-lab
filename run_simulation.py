@@ -8,6 +8,7 @@ from pathlib import Path
 from simulator.config import load_experiment
 from simulator.engine import simulate_events
 from simulator.metrics import print_summary, summarize
+from simulator.predictor import build_predictor
 
 
 def main() -> None:
@@ -24,12 +25,15 @@ def main() -> None:
                               max_batch_requests=experiment.max_batch_requests,
                               max_tokens_per_batch=experiment.max_tokens_per_batch,
                               prefill_chunk_tokens=experiment.prefill_chunk_tokens,
-                              scheduler_profile=experiment.scheduler_profile)
+                              scheduler_profile=experiment.scheduler_profile,
+                              predictor=build_predictor(experiment.predictor_settings, experiment.timing))
         summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
             "schema_version": 1,
-            "timing_source": "teaching_assumption",
+            "timing_source": ("teaching_assumption" if experiment.predictor_settings.kind == "teaching"
+                              else "uncalibrated_roofline"),
+            "predictor": asdict(experiment.predictor_settings),
             "config_path": str(experiment.config_path),
             "workload_path": str(experiment.workload_path),
             "workload_metadata": experiment.workload_metadata,
@@ -48,7 +52,7 @@ def main() -> None:
                           "max_tokens_per_batch": experiment.max_tokens_per_batch,
                           "prefill_chunk_tokens": experiment.prefill_chunk_tokens,
                           "decode_order": "round_robin_after_completion"},
-            "timing": asdict(experiment.timing),
+            "timing": asdict(experiment.timing) if experiment.predictor_settings.kind == "teaching" else None,
             "summary": summary,
             "requests": [
                 {"request": asdict(result.request), "start_ms": result.start_ms,
@@ -59,6 +63,7 @@ def main() -> None:
             ],
             "steps": [asdict(step) for step in run.batch_run.steps],
             "plans": [asdict(plan) for plan in run.plans],
+            "estimates": [asdict(estimate) for estimate in run.estimates],
             "trace": run.trace,
         }
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -76,7 +81,7 @@ def main() -> None:
         print(f"{result.request.request_id}: TTFT {result.ttft_ms:g}ms，"
               f"ITL {result.inter_token_intervals_ms}ms，总延迟 {result.latency_ms:g}ms")
     print_summary(summary)
-    print(f"结果已保存：{args.output.resolve()}（教学耗时，未校准）")
+    print(f"结果已保存：{args.output.resolve()}（{report['timing_source']}，未校准）")
 
 
 if __name__ == "__main__":

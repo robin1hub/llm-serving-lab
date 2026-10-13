@@ -16,6 +16,9 @@ flowchart LR
     E --> S[scheduler.decide]
     S --> P[不可变BatchPlan]
     P --> E
+    E --> PR[predictor.estimate]
+    PR --> EST[不可变BatchEstimate]
+    EST --> E
     E --> B[BatchRun / EventRun]
     B --> M[metrics.summarize]
     B --> O[结果JSON]
@@ -31,6 +34,7 @@ flowchart LR
 | simulator/config.py | 校验实验JSON、读取标准负载、核对manifest | 不修改请求进度 |
 | simulator/scheduler.py | SchedulerProfile、约束、快照、计划、只读选批、完成反馈、轮转纯函数 | 不分配KV、不生成token、不推进时间 |
 | simulator/engine.py | 持有队列与进度、提交计划、处理事件与完成 | 不解析原始文本或拟合真实耗时 |
+| simulator/predictor.py | 不可变工作描述、模型/硬件/修正参数、教学或roofline估算 | 不选批、不分配KV、不修改进度或时钟 |
 | simulator/metrics.py | 从完成结果计算摘要 | 不改变事件/调度状态 |
 | run_simulation.py | 连接加载、执行、统计、输出 | 不实现第二套调度机制 |
 
@@ -64,13 +68,21 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 7. Decode每成员一次产生一个输出，完成者退出；未完成已服务者移到轮转尾部。
 8. 模拟结束后每个请求输出数量等于目标，token时间递增；不暴露目标长度给选批策略。
 9. 时间只在取事件时前进；启动只安排未来complete。
-10. 未设置新预算时保留原A/B与ShareGPT请求结果和执行区间；trace和plans可增加说明字段。
+10. 默认teaching且未设置新预算时保留原A/B与ShareGPT请求结果和执行区间；trace/plans/estimates可增加说明字段。选择roofline会改变事件时间，可能进一步改变下一轮就绪候选。
 
 ## 耗时与统计假设
 
-Prefill块耗时为本轮输入数×教学系数；Decode整轮固定耗时，无batch/上下文变化、无分块启动开销。TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所有间隔，吞吐窗口首到达至末完成含空闲，空样本null。
+耗时统一通过 Predictor.estimate(tuple[PredictorItem]) 返回 BatchEstimate。内核在提交前提供本轮新token、上下文、阶段、是否产出token。Prefill上下文是range_start；Decode是input_tokens+已产出输出数-1。预测不暴露未来输出目标。内核校验正数、有限耗时以及完成时间能推进；estimates与plans/steps同序保存。
+
+默认teaching复用旧timing：Prefill按输入数线性，Decode整轮固定，无上下文/人数负担。可选roofline用dense/SwiGLU/GQA简化模型分矩阵组、Attention组；每组max计算时间与访存时间，再相加与batch开销。系数乘时间，权重每batch按读取一次估计，KV读写为粗略近似。未支持MoE/MLA、实际内核/缓存效率，也未校准，来源标记uncalibrated_roofline。
+
+顶层predictor可省略（teaching）或显式配置kind。teaching要求timing且不允许model/device/calibration；roofline必须含这三个对象且禁止同时设置timing。模型维度和字节数是正整数，头数需整除；硬件算力/带宽与系数为有限正数，batch开销有限非负；未知字段报错。roofline没有显存容量准入；当前Scheduler不使用预测来选择成员。公式、单位、假设、手算见第10章。
+
+TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所有间隔，吞吐窗口首到达至末完成含空闲，空样本null。
 
 输出schema_version仍为1，新增 worker 与 resolved_scheduler_profile 为扩展，记录实际引用与解析后算法/约束；scheduler 扁平字段保留兼容。旧结果保持可读，但不能当作启用了新机制。plans[i]对应steps[i]。
+
+第10章新增predictor配置与estimates明细。teaching的timing_source/timing维持原值；roofline来源uncalibrated_roofline、timing为null，不将内部兼容Timing默认值展示成启用参数。
 
 ## 明确尚未实现
 
@@ -85,4 +97,4 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第9章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第10章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。

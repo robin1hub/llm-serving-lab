@@ -8,6 +8,7 @@ from typing import cast
 from .models import Request, Timing
 from .dataset import sha256_file
 from .scheduler import Policy, SchedulerConfig, SchedulerProfile
+from .predictor import Calibration, DeviceProfile, ModelProfile, PredictorSettings
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class Experiment:
     profile_name: str = "legacy"
     worker_id: str = "worker_0"
     worker_role: str = "Mix"
+    predictor_settings: PredictorSettings = PredictorSettings()
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -63,8 +65,8 @@ def _fields(value: object, expected: set[str], location: str, optional: set[str]
 def load_experiment(path: Path) -> Experiment:
     # 【重点 1：先读配置，不让执行内核解析 JSON。】
     config_path = path.resolve()
-    raw = _fields(_read_json(config_path), {"workload", "timing"}, "config",
-                  {"scheduler", "scheduler_profiles", "workers"})
+    raw = _fields(_read_json(config_path), {"workload"}, "config",
+                  {"timing", "predictor", "scheduler", "scheduler_profiles", "workers"})
     workload = _fields(raw["workload"], {"path"}, "workload")
     # 【方案重点】兼容旧配置，但新旧写法不能混用，防止两个地方设置不同策略。
     if "scheduler" in raw:
@@ -104,8 +106,32 @@ def load_experiment(path: Path) -> Experiment:
         if worker_role != "Mix":
             raise ValueError("当前完整请求运行仅支持 Mix worker；P/D 需要后续 P→D 交接机制")
         scheduler_config = profile.constraints
-    timing = _fields(raw["timing"],
-                     {"prefill_ms_per_input_token", "decode_ms_per_step"}, "timing")
+    # 【预测重点】算法不决定耗时来源；两个来源互斥，避免参数被悄悄忽略。
+    predictor = _fields(raw.get("predictor", {"kind": "teaching"}), {"kind"}, "predictor",
+                        {"model", "device", "calibration"})
+    if predictor["kind"] == "teaching":
+        _fields(predictor, {"kind"}, "predictor")
+        timing = _fields(raw.get("timing"),
+                         {"prefill_ms_per_input_token", "decode_ms_per_step"}, "timing")
+        timing_config = Timing(**timing)
+        predictor_settings = PredictorSettings()
+    elif predictor["kind"] == "roofline":
+        if "timing" in raw:
+            raise ValueError("roofline 不能同时设置教学 timing")
+        _fields(predictor, {"kind", "model", "device", "calibration"}, "predictor")
+        model = _fields(predictor["model"],
+                        {"num_layers", "hidden_size", "intermediate_size", "num_attention_heads",
+                         "num_kv_heads", "vocab_size"}, "predictor.model",
+                        {"weight_bytes_per_element", "activation_bytes_per_element", "kv_bytes_per_element"})
+        device = _fields(predictor["device"],
+                         {"name", "peak_flops", "memory_bandwidth_bytes_per_s"}, "predictor.device")
+        calibration = _fields(predictor["calibration"], set(), "predictor.calibration",
+                              {"dense_factor", "attention_factor", "batch_overhead_ms"})
+        predictor_settings = PredictorSettings("roofline", ModelProfile(**model),
+                                               DeviceProfile(**device), Calibration(**calibration))
+        timing_config = Timing()  # 兼容已有Experiment字段；roofline不使用它，输出为null。
+    else:
+        raise ValueError("predictor.kind 必须是 teaching 或 roofline")
     if not isinstance(workload["path"], str) or not workload["path"].strip():
         raise ValueError("workload.path 必须是非空路径字符串")
     policy = profile.mix_algorithm
@@ -138,8 +164,8 @@ def load_experiment(path: Path) -> Experiment:
         if metadata.get("selected_count") != len(requests):
             raise ValueError("负载与 manifest 请求数量不匹配")
     # 【重点 3：复用原 Request / Timing 的校验，返回不可变实验输入。】
-    return Experiment(tuple(requests), Timing(**timing),
+    return Experiment(tuple(requests), timing_config,
                       cast(Policy, policy),
                       config_path, workload_path, metadata, scheduler_config.max_batch_requests,
                       scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens,
-                      profile, profile_name, worker_id, worker_role)
+                      profile, profile_name, worker_id, worker_role, predictor_settings)

@@ -5,8 +5,9 @@ from dataclasses import dataclass, field
 import heapq
 
 from .models import BatchRun, BatchStep
-from .models import Event, Request, Result, Timing
+from .models import Event, Request, Result, Timing, _validate_time
 from .scheduler import BatchPlan, Policy, ReadyTask, Scheduler, SchedulerConfig, SchedulerProfile, SchedulingSnapshot, rotate_after_completion
+from .predictor import BatchEstimate, Predictor, PredictorItem, TeachingPredictor
 
 
 @dataclass(order=True, frozen=True)
@@ -27,6 +28,7 @@ class EventRun:
     batch_run: BatchRun
     trace: tuple[str, ...]
     plans: tuple[BatchPlan, ...]
+    estimates: tuple[BatchEstimate, ...] = ()
 
 
 def simulate_events(
@@ -36,10 +38,12 @@ def simulate_events(
     max_tokens_per_batch: int | None = None,
     prefill_chunk_tokens: int | None = None,
     scheduler_profile: SchedulerProfile | None = None,
+    predictor: Predictor | None = None,
 ) -> EventRun:
     """单卡事件执行；Scheduler 只提计划，内核负责提交和完成。"""
     scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests, max_tokens_per_batch,
                                           prefill_chunk_tokens), profile=scheduler_profile)
+    duration_predictor = predictor if predictor is not None else TeachingPredictor(timing)
     if len({item.request_id for item in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
@@ -56,6 +60,7 @@ def simulate_events(
     active: list[str] = []
     steps: list[BatchStep] = []
     plans: list[BatchPlan] = []
+    estimates: list[BatchEstimate] = []
     trace: list[str] = []
     busy = False
     wakeup_pending = False
@@ -146,26 +151,40 @@ def simulate_events(
                          f"选择 {phase} {list(members)}；{plan.reason}")
             trace.append(f"  工作量={[(item.request_id, item.token_count) for item in plan.items]}；"
                          f"本轮 token 总数={sum(item.token_count for item in plan.items)}")
-            # 【提交重点】本步无 KV 容量检查；内核确认计划后才取走请求、占用 GPU。
+            # 【预测重点1】只提供本轮工作与已知上下文，不提供未来输出长度。
+            # 首token是最终Prefill产生的，尚未再次输入模型：Decode context因此减1。
+            predictor_items = tuple(PredictorItem(
+                item.request_id, item.phase, item.token_count,
+                item.range_start if item.phase == "Prefill" else
+                by_id[item.request_id].input_tokens + len(token_times[item.request_id]) - 1,
+                item.phase == "Decode" or
+                item.range_start + item.token_count == by_id[item.request_id].input_tokens,
+            ) for item in plan.items)
+            estimate = duration_predictor.estimate(predictor_items)
+            duration_ms = estimate.duration_ms
+            # 拒绝非法预测与无法推进浮点时钟的时间，避免无进展循环。
+            _validate_time("预测耗时", duration_ms, allow_zero=False)
+            end_ms = now_ms + duration_ms
+            _validate_time("完成时间", end_ms, allow_zero=False)
+            if end_ms <= now_ms:
+                raise ValueError("预测耗时过小，无法推进模拟时钟")
+            # 【提交重点】预测完成再取走请求；本步仍无 KV 容量检查。
             if phase == "Prefill":
                 request_id = waiting.popleft()
                 assert request_id == members[0]
-                duration_ms = plan.items[0].token_count * timing.prefill_ms_per_input_token
                 # 【分块重点 2】等待时间以第一块开始为准，不被后续块覆盖。
                 if request_id not in starts:
                     starts[request_id] = now_ms
                     records[request_id].append(Event(now_ms, "开始 Prefill"))
                 else:
                     records[request_id].append(Event(now_ms, "继续 Prefill 分块"))
-            else:
-                duration_ms = timing.decode_ms_per_step
 
             # 【重点 5：开始执行只注册未来完成，不把时钟跳到结束。】
             # members 固定本轮成员；busy 阻止其他到达事件启动重叠计算。
-            end_ms = now_ms + duration_ms
             busy = True
             steps.append(BatchStep(now_ms, end_ms, phase, members))
             plans.append(plan)
+            estimates.append(estimate)
             schedule(end_ms, "complete", members, phase, plan)
             trace.append(f"  启动 {phase} {list(members)}；注册 {end_ms:g}ms 完成通知")
 
@@ -174,4 +193,4 @@ def simulate_events(
         Result(item, tuple(records[item.request_id]), tuple(token_times[item.request_id]), starts[item.request_id])
         for item in ordered
     )
-    return EventRun(BatchRun(results, tuple(steps)), tuple(trace), tuple(plans))
+    return EventRun(BatchRun(results, tuple(steps)), tuple(trace), tuple(plans), tuple(estimates))
