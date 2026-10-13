@@ -50,7 +50,7 @@ engine 的局部可变状态为 future 最小堆、waiting deque、active列表�
 
 ## 当前配置契约
 
-推荐实验顶层为 workload/timing/scheduler_profiles/workers。方案含 prefill_algorithm、decode_algorithm、mix_algorithm 与必填 constraints 对象；支持 fcfs_chunked、round_robin 和三种 Mix 选择规则 prefill_first/decode_first/alternating。constraints 仅接受 max_batch_requests/max_tokens_per_batch/prefill_chunk_tokens，可选正整数或 null，省略/null 不限制。workers 按方案名引用，字段 id/role/scheduler_profile 必填。P 要求 Prefill 槽，D 要求 Decode 槽，Mix 要求三个槽。所有方案均校验；目前执行只接受一个 Mix worker，P/D 或多个 worker 明确报错。
+推荐实验顶层为 workload/timing/scheduler_profiles/workers。方案含 prefill_algorithm、decode_algorithm、mix_algorithm 与必填 constraints 对象；支持 fcfs_chunked、round_robin 和四种 Mix 选择规则 prefill_first/decode_first/alternating/mixed_decode_first。constraints 仅接受 max_batch_requests/max_tokens_per_batch/prefill_chunk_tokens，可选正整数或 null，省略/null 不限制。workers 按方案名引用，字段 id/role/scheduler_profile 必填。P 要求 Prefill 槽，D 要求 Decode 槽，Mix 要求三个槽。所有方案均校验；目前执行只接受一个 Mix worker，P/D 或多个 worker 明确报错。
 
 旧 workload/scheduler/timing JSON 仍兼容，scheduler.policy 转换为 Mix 槽；新旧写法禁止混用，constraints 不允许 policy。Python 的 SchedulerConfig.policy 保留作兼容入口，提供 profile 后阶段选择以 profile.mix_algorithm 为准。未知字段/算法、错误引用均报错，不静默降级。第9章有完整配置与选批流程。
 
@@ -59,8 +59,8 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 ## 执行契约与必须保持的不变量
 
 1. 单GPU执行区间不重叠；busy时到达只排队，不抢占。
-2. Scheduler.decide不改变快照或队列，计划每轮同一阶段；Prefill一次一个请求，Decode轮转。
-   Mix 槽仅在 P/D 都就绪时决定阶段；alternating 依据上轮完成阶段选择另一阶段，初始选 P。仅一阶段就绪时不空转，只有完成事件改变交替状态。
+2. Scheduler.decide不改变快照或队列，计划可单阶段或Mixed；Prefill最多一个请求的输入块，Decode轮转。每成员阶段仍为Prefill/Decode，批级Mixed标签不用于更新请求状态。
+   Mix 槽仅在 P/D 都就绪时决定阶段；alternating 依据上轮完成阶段选择另一阶段，初始选 P。仅一阶段就绪时不空转，只有完成事件改变交替状态。mixed_decode_first先选Decode，再用剩余人数槽与token预算加入队首Prefill块；空间耗尽则仅Decode，不预留Prefill额度。
 3. 每计划成员数不超过人数上限，token_count总和不超过token上限；Prefill还不超过chunk。
 4. Prefill范围连续且恰好覆盖完整输入；prefill_done仅在完成事件累加。
 5. 非最终Prefill块不生成输出、不进入active；最终块生成首token，单输出请求直接完成。
@@ -74,7 +74,7 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 
 耗时统一通过 Predictor.estimate(tuple[PredictorItem]) 返回 BatchEstimate。内核在提交前提供本轮新token、上下文、阶段、是否产出token。Prefill上下文是range_start；Decode是input_tokens+已产出输出数-1。预测不暴露未来输出目标。内核校验正数、有限耗时以及完成时间能推进；estimates与plans/steps同序保存。
 
-默认teaching复用旧timing：Prefill按输入数线性，Decode整轮固定，无上下文/人数负担。可选roofline用dense/SwiGLU/GQA简化模型分矩阵组、Attention组；每组max计算时间与访存时间，再相加与batch开销。系数乘时间，权重每batch按读取一次估计，KV读写为粗略近似。未支持MoE/MLA、实际内核/缓存效率，也未校准，来源标记uncalibrated_roofline。
+默认teaching复用旧timing：Prefill按输入数线性，Decode整轮固定，无上下文/人数负担；Mixed为Prefill部分加一次Decode时间，整批同一完成屏障。可选roofline用dense/SwiGLU/GQA简化模型分矩阵组、Attention组；每组max计算时间与访存时间，再相加与batch开销。系数乘时间，权重每batch按读取一次估计，KV读写为粗略近似。未支持MoE/MLA、实际内核/缓存效率，也未校准，来源标记uncalibrated_roofline。
 
 顶层predictor可省略（teaching）或显式配置kind。teaching要求timing且不允许model/device/calibration；roofline必须含这三个对象且禁止同时设置timing。模型维度和字节数是正整数，头数需整除；硬件算力/带宽与系数为有限正数，batch开销有限非负；未知字段报错。roofline没有显存容量准入；当前Scheduler不使用预测来选择成员。公式、单位、假设、手算见第10章。
 
@@ -86,7 +86,7 @@ TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所
 
 ## 明确尚未实现
 
-KV容量/页分配、容量阻塞、抢占恢复、混合P/D batch、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
+KV容量/页分配、容量阻塞、抢占恢复、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
 
 ## 验证与交接入口
 
@@ -97,4 +97,8 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第10章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第11章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+
+## 第11章混合执行补充
+
+提交遍历items，仅取走Prefill成员。完成按item.phase更新；中间输入块返回waiting、最终输入块才产首token。只轮转本轮Decode成员，新Prefill进入active不算已服务Decode。每轮仍一个完成事件，执行期间到达不得插入。roofline整体估算Mixed成员，权重/开销按整批一次；教学相加规则只作近似。test_mixed.py验证预算、完成/轮转、上下文、手算与到达边界。混合轮可减少次数，但不保证延迟/吞吐改善。详见第11章。

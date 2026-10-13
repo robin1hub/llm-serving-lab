@@ -1,0 +1,45 @@
+{
+  "workload": {
+    "path": "../workloads/predictor_requests.json"
+  },
+  "scheduler_profiles": {
+    "mix_default": {
+      "prefill_algorithm": "fcfs_chunked",
+      "decode_algorithm": "round_robin",
+      "mix_algorithm": "mixed_decode_first",
+      "constraints": {
+        "max_batch_requests": 2,
+        "prefill_chunk_tokens": 2,
+        "max_tokens_per_batch": 3
+      }
+    }
+  },
+  "workers": [
+    {
+      "id": "worker_0",
+      "role": "Mix",
+      "scheduler_profile": "mix_default"
+    }
+  ],
+  "predictor": {
+    "kind": "roofline",
+    "model": {
+      "num_layers": 1,
+      "hidden_size": 4,
+      "intermediate_size": 8,
+      "num_attention_heads": 2,
+      "num_kv_heads": 1,
+      "vocab_size": 8
+    },
+    "device": {
+      "name": "toy-device-not-4090",
+      "peak_flops": 1000000,
+      "memory_bandwidth_bytes_per_s": 1000000
+    },
+    "calibration": {
+      "dense_factor": 1,
+      "attention_factor": 1,
+      "batch_overhead_ms": 0.1
+    }
+  }
+}

@@ -117,15 +117,17 @@ def simulate_events(
                         continue
                 token_times[request_id].append(now_ms)
                 count = len(token_times[request_id])
-                records[request_id].append(Event(now_ms, f"{event.phase} 完成，产出 token", count))
+                records[request_id].append(Event(now_ms, f"{item.phase} 完成，产出 token", count))
                 if count == by_id[request_id].output_tokens:
                     records[request_id].append(Event(now_ms, "请求完成"))
                     if request_id in active:
                         active.remove(request_id)
-                elif event.phase == "Prefill":
+                elif item.phase == "Prefill":
                     active.append(request_id)
-            if event.phase == "Decode":
-                active = list(rotate_after_completion(tuple(active), event.request_ids))
+            # 【混合完成重点】只轮转本轮实际Decode成员，新进入active的Prefill不算已服务。
+            served_decode = tuple(item.request_id for item in event.plan.items if item.phase == "Decode")
+            if served_decode:
+                active = list(rotate_after_completion(tuple(active), served_decode))
             # 【交替重点】进度提交完成后才通知策略；查询计划本身不能切换轮次。
             scheduler.on_batch_completed(event.plan)
             busy = False
@@ -169,9 +171,12 @@ def simulate_events(
             if end_ms <= now_ms:
                 raise ValueError("预测耗时过小，无法推进模拟时钟")
             # 【提交重点】预测完成再取走请求；本步仍无 KV 容量检查。
-            if phase == "Prefill":
+            # 【混合提交重点】整批标签可能是Mixed，按成员阶段取走Prefill并记录首次开始。
+            for item in plan.items:
+                if item.phase != "Prefill":
+                    continue
                 request_id = waiting.popleft()
-                assert request_id == members[0]
+                assert request_id == item.request_id
                 # 【分块重点 2】等待时间以第一块开始为准，不被后续块覆盖。
                 if request_id not in starts:
                     starts[request_id] = now_ms

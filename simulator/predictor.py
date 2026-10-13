@@ -127,11 +127,15 @@ class TeachingPredictor:
         self.timing = timing
 
     def estimate(self, items: tuple[PredictorItem, ...]) -> BatchEstimate:
-        if not items or len({item.phase for item in items}) != 1:
-            raise ValueError("教学 Predictor 仅支持非空的单阶段 batch")
+        if not items:
+            raise ValueError("不能预测空 batch")
         # 【重点1：兼容旧实验】Decode整轮固定耗时，不能乘以成员数量。
-        duration = (sum(item.new_tokens for item in items) * self.timing.prefill_ms_per_input_token
-                    if items[0].phase == "Prefill" else self.timing.decode_ms_per_step)
+        # 【混合教学假设】输入块线性时间加一次Decode时间，不代表真实融合执行效率。
+        prefill_tokens = sum(item.new_tokens for item in items if item.phase == "Prefill")
+        has_decode = any(item.phase == "Decode" for item in items)
+        duration = prefill_tokens * self.timing.prefill_ms_per_input_token
+        if has_decode:
+            duration += self.timing.decode_ms_per_step
         return BatchEstimate("teaching_assumption", items, duration)
 
 

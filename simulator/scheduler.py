@@ -5,7 +5,8 @@ from typing import Literal
 
 
 Phase = Literal["Prefill", "Decode"]
-Policy = Literal["prefill_first", "decode_first", "alternating"]
+BatchPhase = Literal["Prefill", "Decode", "Mixed"]
+Policy = Literal["prefill_first", "decode_first", "alternating", "mixed_decode_first"]
 Role = Literal["P", "D", "Mix"]
 
 
@@ -17,8 +18,8 @@ class SchedulerConfig:
     prefill_chunk_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        if self.policy not in ("prefill_first", "decode_first", "alternating"):
-            raise ValueError("policy 必须是 prefill_first、decode_first 或 alternating")
+        if self.policy not in ("prefill_first", "decode_first", "alternating", "mixed_decode_first"):
+            raise ValueError("policy 必须是 prefill_first、decode_first、alternating 或 mixed_decode_first")
         # None 表示不启用该限制，兼容旧实验；这些限制都不代表 KV 容量。
         for name in ("max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"):
             limit = getattr(self, name)
@@ -38,7 +39,7 @@ class SchedulerProfile:
     def __post_init__(self) -> None:
         for name, supported in (("prefill_algorithm", ("fcfs_chunked",)),
                                 ("decode_algorithm", ("round_robin",)),
-                                ("mix_algorithm", ("prefill_first", "decode_first", "alternating"))):
+                                ("mix_algorithm", ("prefill_first", "decode_first", "alternating", "mixed_decode_first"))):
             value = getattr(self, name)
             if value is not None and value not in supported:
                 raise ValueError(f"{name} 不支持算法 {value!r}")
@@ -73,14 +74,14 @@ class SchedulingSnapshot:
 
 @dataclass(frozen=True)
 class BatchPlan:
-    """明确这一轮执行谁、哪个阶段、处理多少新 token；暂不混合阶段。"""
+    """每成员保存自己的阶段；整批phase只是显示标签，不能用来更新请求。"""
 
     items: tuple[ReadyTask, ...]
     reason: str
 
     @property
-    def phase(self) -> Phase:
-        return self.items[0].phase
+    def phase(self) -> BatchPhase:
+        return self.items[0].phase if len({item.phase for item in self.items}) == 1 else "Mixed"
 
     @property
     def request_ids(self) -> tuple[str, ...]:
@@ -96,7 +97,7 @@ class Scheduler:
         self.profile.validate_role(role)
         self.config = self.profile.constraints
         self.role = role
-        self.last_completed_phase: Phase | None = None
+        self.last_completed_phase: BatchPhase | None = None
 
     def on_batch_completed(self, plan: BatchPlan) -> None:
         # 有状态策略仅在完成后更新；重复 decide 不会偷偷消耗交替机会。
@@ -112,6 +113,8 @@ class Scheduler:
         choose_prefill = bool(prefill) and not decode
         if prefill and decode:
             algorithm = self.profile.mix_algorithm
+            if algorithm == "mixed_decode_first":
+                return self._mixed_decode_first(snapshot)
             choose_prefill = algorithm == "prefill_first" or (
                 algorithm == "alternating" and self.last_completed_phase != "Prefill"
             )
@@ -140,6 +143,26 @@ class Scheduler:
         reason = "全部 Decode 候选入选" if len(members) == len(decode) else "请求数/token 上限，其余留待下一轮"
         reason = (f"Mix={self.profile.mix_algorithm} 选择 Decode；" if prefill else "仅 Decode 就绪；") + reason
         return BatchPlan(members, reason)
+
+    def _mixed_decode_first(self, snapshot: SchedulingSnapshot) -> BatchPlan:
+        # 【混合重点1】Decode先占请求槽和token预算，不为Prefill强行预留槽位。
+        limits = [len(snapshot.ready_decode)]
+        limits.extend(limit for limit in (self.config.max_batch_requests,
+                                           self.config.max_tokens_per_batch) if limit is not None)
+        members = snapshot.ready_decode[:min(limits)]
+        remaining_slots = (self.config.max_batch_requests - len(members)
+                           if self.config.max_batch_requests is not None else 1)
+        remaining_tokens = (self.config.max_tokens_per_batch - len(members)
+                            if self.config.max_tokens_per_batch is not None else None)
+        if remaining_slots <= 0 or remaining_tokens == 0:
+            return BatchPlan(members, "mixed_decode_first：Decode耗尽请求槽/token预算，Prefill留待下一轮")
+        # 【混合重点2】仅将FCFS队首的一个输入块加入剩余空间，保留教学模型边界。
+        task = snapshot.waiting_prefill[0]
+        chunk_limits = [task.token_count]
+        chunk_limits.extend(limit for limit in (remaining_tokens, self.config.prefill_chunk_tokens)
+                            if limit is not None)
+        prefill = ReadyTask(task.request_id, "Prefill", min(chunk_limits), task.range_start)
+        return BatchPlan(members + (prefill,), "mixed_decode_first：Decode先入选，剩余预算加入一个Prefill块")
 
 
 def rotate_after_completion(active: tuple[str, ...], served: tuple[str, ...]) -> tuple[str, ...]:
