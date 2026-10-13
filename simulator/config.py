@@ -19,6 +19,8 @@ class Experiment:
     workload_path: Path
     workload_metadata: dict | None = None
     max_batch_requests: int | None = None
+    max_tokens_per_batch: int | None = None
+    prefill_chunk_tokens: int | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -59,7 +61,8 @@ def load_experiment(path: Path) -> Experiment:
     config_path = path.resolve()
     raw = _fields(_read_json(config_path), {"workload", "scheduler", "timing"}, "config")
     workload = _fields(raw["workload"], {"path"}, "workload")
-    scheduler = _fields(raw["scheduler"], {"policy"}, "scheduler", {"max_batch_requests"})
+    scheduler = _fields(raw["scheduler"], {"policy"}, "scheduler",
+                        {"max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"})
     timing = _fields(raw["timing"],
                      {"prefill_ms_per_input_token", "decode_ms_per_step"}, "timing")
     if not isinstance(workload["path"], str) or not workload["path"].strip():
@@ -67,7 +70,9 @@ def load_experiment(path: Path) -> Experiment:
     policy = scheduler["policy"]
     if policy not in ("prefill_first", "decode_first"):
         raise ValueError("scheduler.policy 必须是 prefill_first 或 decode_first")
-    scheduler_config = SchedulerConfig(policy, scheduler.get("max_batch_requests"))
+    scheduler_config = SchedulerConfig(policy, scheduler.get("max_batch_requests"),
+                                       scheduler.get("max_tokens_per_batch"),
+                                       scheduler.get("prefill_chunk_tokens"))
 
     # 【重点 2：负载相对路径以配置文件所在目录为基准，不依赖运行目录。】
     workload_path = (config_path.parent / workload["path"]).resolve()
@@ -99,4 +104,5 @@ def load_experiment(path: Path) -> Experiment:
     # 【重点 3：复用原 Request / Timing 的校验，返回不可变实验输入。】
     return Experiment(tuple(requests), Timing(**timing),
                       cast(Literal["prefill_first", "decode_first"], policy),
-                      config_path, workload_path, metadata, scheduler_config.max_batch_requests)
+                      config_path, workload_path, metadata, scheduler_config.max_batch_requests,
+                      scheduler_config.max_tokens_per_batch, scheduler_config.prefill_chunk_tokens)

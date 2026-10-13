@@ -12,14 +12,17 @@ Policy = Literal["prefill_first", "decode_first"]
 class SchedulerConfig:
     policy: Policy = "prefill_first"
     max_batch_requests: int | None = None
+    max_tokens_per_batch: int | None = None
+    prefill_chunk_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if self.policy not in ("prefill_first", "decode_first"):
             raise ValueError("policy 必须是 prefill_first 或 decode_first")
-        limit = self.max_batch_requests
-        # None 明确表示不限成员数，兼容之前的教学实验；不是显存无限。
-        if limit is not None and (type(limit) is not int or limit <= 0):
-            raise ValueError("max_batch_requests 必须是正整数或 null")
+        # None 表示不启用该限制，兼容旧实验；这些限制都不代表 KV 容量。
+        for name in ("max_batch_requests", "max_tokens_per_batch", "prefill_chunk_tokens"):
+            limit = getattr(self, name)
+            if limit is not None and (type(limit) is not int or limit <= 0):
+                raise ValueError(f"{name} 必须是正整数或 null")
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,7 @@ class ReadyTask:
     request_id: str
     phase: Phase
     token_count: int
+    range_start: int = 0  # Prefill 本轮输入范围起点；Decode 暂不使用此字段。
 
 
 @dataclass(frozen=True)
@@ -62,15 +66,26 @@ class Scheduler:
         prefill = snapshot.waiting_prefill
         decode = snapshot.ready_decode
         if prefill and (self.config.policy == "prefill_first" or not decode):
-            # 完整 Prefill 仍一次一个；本步不引入分块、token 预算和混合 batch。
-            return BatchPlan(prefill[:1], "Prefill 优先或没有 Decode 候选")
+            # 【预算重点 1】剩余输入、整轮预算、单请求 chunk 三者取最小值。
+            task = prefill[0]
+            limits = [task.token_count]
+            limits.extend(limit for limit in (self.config.max_tokens_per_batch,
+                                               self.config.prefill_chunk_tokens) if limit is not None)
+            selected = ReadyTask(task.request_id, "Prefill", min(limits), task.range_start)
+            reason = "Prefill 优先或没有 Decode 候选"
+            if selected.token_count < task.token_count:
+                reason += "；按 token 预算/chunk 分块"
+            return BatchPlan((selected,), reason)
         if not decode:
             return None
 
         # 【重点 2：候选集合不等于本轮成员】只取轮转队列前 limit 个。
-        limit = self.config.max_batch_requests
-        members = decode if limit is None else decode[:limit]
-        reason = "全部 Decode 候选入选" if len(members) == len(decode) else "请求数上限，其余留待下一轮"
+        # 【预算重点 2】每个 Decode 消耗 1 token，人数和 token 预算同时限制成员。
+        limits = [len(decode)]
+        limits.extend(limit for limit in (self.config.max_batch_requests,
+                                           self.config.max_tokens_per_batch) if limit is not None)
+        members = decode[:min(limits)]
+        reason = "全部 Decode 候选入选" if len(members) == len(decode) else "请求数/token 上限，其余留待下一轮"
         return BatchPlan(members, reason)
 
 

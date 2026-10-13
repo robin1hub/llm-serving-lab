@@ -21,7 +21,9 @@ def main() -> None:
         # 【重点 1】文件转为请求对象；事件内核继续使用原来的函数。
         experiment = load_experiment(args.config)
         run = simulate_events(experiment.requests, experiment.timing, policy=experiment.policy,
-                              max_batch_requests=experiment.max_batch_requests)
+                              max_batch_requests=experiment.max_batch_requests,
+                              max_tokens_per_batch=experiment.max_tokens_per_batch,
+                              prefill_chunk_tokens=experiment.prefill_chunk_tokens)
         summary = summarize(run.batch_run)
         # 【重点 2】结果保留实际输入和参数，便于之后核对和复现。
         report = {
@@ -32,6 +34,8 @@ def main() -> None:
             "workload_metadata": experiment.workload_metadata,
             "policy": experiment.policy,
             "scheduler": {"policy": experiment.policy, "max_batch_requests": experiment.max_batch_requests,
+                          "max_tokens_per_batch": experiment.max_tokens_per_batch,
+                          "prefill_chunk_tokens": experiment.prefill_chunk_tokens,
                           "decode_order": "round_robin_after_completion"},
             "timing": asdict(experiment.timing),
             "summary": summary,
@@ -53,6 +57,10 @@ def main() -> None:
         parser.exit(2, f"错误：{error}\n")
     for step in (() if args.summary else run.batch_run.steps):
         print(f"{step.start_ms:g}–{step.end_ms:g}ms {step.phase} {list(step.request_ids)}")
+    if not args.summary:
+        print("计划工作量（新 token 数；Prefill range_start 是输入偏移）：")
+        for index, plan in enumerate(run.plans):
+            print(f"  第 {index + 1} 轮：{[(item.request_id, item.phase, item.range_start, item.token_count) for item in plan.items]}")
     for result in (() if args.summary else run.batch_run.results):
         print(f"{result.request.request_id}: TTFT {result.ttft_ms:g}ms，"
               f"ITL {result.inter_token_intervals_ms}ms，总延迟 {result.latency_ms:g}ms")

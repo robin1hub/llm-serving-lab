@@ -34,9 +34,12 @@ def simulate_events(
     requests: tuple[Request, ...], timing: Timing, *,
     policy: Literal["prefill_first", "decode_first"] = "prefill_first",
     max_batch_requests: int | None = None,
+    max_tokens_per_batch: int | None = None,
+    prefill_chunk_tokens: int | None = None,
 ) -> EventRun:
     """单卡事件执行；Scheduler 只提计划，内核负责提交和完成。"""
-    scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests))
+    scheduler = Scheduler(SchedulerConfig(policy, max_batch_requests, max_tokens_per_batch,
+                                          prefill_chunk_tokens))
     if len({item.request_id for item in requests}) != len(requests):
         raise ValueError("request_id 必须唯一")
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
@@ -44,6 +47,7 @@ def simulate_events(
     token_times: dict[str, list[float]] = {item.request_id: [] for item in ordered}
     records: dict[str, list[Event]] = {item.request_id: [] for item in ordered}
     starts: dict[str, float] = {}
+    prefill_done = {item.request_id: 0 for item in ordered}
 
     # 【重点 1：三个容器各管什么？】
     # future 保存未来事件；waiting 只含已经到达的请求；active 只含待 Decode 请求。
@@ -95,6 +99,17 @@ def simulate_events(
             assert event.plan is not None  # 完成的是启动时固定的计划，不重新选成员。
             for item in event.plan.items:
                 request_id = item.request_id
+                if item.phase == "Prefill":
+                    # 【分块重点 1】完成事件才累加已处理输入；中间块不产生输出。
+                    assert item.range_start == prefill_done[request_id]
+                    prefill_done[request_id] += item.token_count
+                    assert prefill_done[request_id] <= by_id[request_id].input_tokens
+                    if prefill_done[request_id] < by_id[request_id].input_tokens:
+                        records[request_id].append(Event(now_ms, f"Prefill 分块完成，输入进度 "
+                            f"{prefill_done[request_id]}/{by_id[request_id].input_tokens}，尚无首 token"))
+                        # 当前 FCFS 继续优先服务队首分块；不隐式改变阶段策略。
+                        waiting.appendleft(request_id)
+                        continue
                 token_times[request_id].append(now_ms)
                 count = len(token_times[request_id])
                 records[request_id].append(Event(now_ms, f"{event.phase} 完成，产出 token", count))
@@ -116,7 +131,8 @@ def simulate_events(
                 continue
             # 【选批重点：只读快照 → 候选计划】快照不暴露真实最终输出长度。
             snapshot = SchedulingSnapshot(
-                tuple(ReadyTask(item, "Prefill", by_id[item].input_tokens) for item in waiting),
+                tuple(ReadyTask(item, "Prefill", by_id[item].input_tokens - prefill_done[item],
+                                prefill_done[item]) for item in waiting),
                 tuple(ReadyTask(item, "Decode", 1) for item in active),
             )
             plan = scheduler.decide(snapshot)
@@ -126,13 +142,19 @@ def simulate_events(
             phase = plan.phase
             trace.append(f"  候选 Prefill={list(waiting)}，Decode={active}；"
                          f"选择 {phase} {list(members)}；{plan.reason}")
+            trace.append(f"  工作量={[(item.request_id, item.token_count) for item in plan.items]}；"
+                         f"本轮 token 总数={sum(item.token_count for item in plan.items)}")
             # 【提交重点】本步无 KV 容量检查；内核确认计划后才取走请求、占用 GPU。
             if phase == "Prefill":
                 request_id = waiting.popleft()
                 assert request_id == members[0]
                 duration_ms = plan.items[0].token_count * timing.prefill_ms_per_input_token
-                starts[request_id] = now_ms
-                records[request_id].append(Event(now_ms, "开始 Prefill"))
+                # 【分块重点 2】等待时间以第一块开始为准，不被后续块覆盖。
+                if request_id not in starts:
+                    starts[request_id] = now_ms
+                    records[request_id].append(Event(now_ms, "开始 Prefill"))
+                else:
+                    records[request_id].append(Event(now_ms, "继续 Prefill 分块"))
             else:
                 duration_ms = timing.decode_ms_per_step
 

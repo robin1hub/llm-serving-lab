@@ -41,7 +41,8 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 5. [ShareGPT 负载](docs/chapters/05-sharegpt.md)：真实分词、长度过滤和到达计划。
 6. [结果统计](docs/chapters/06-metrics.md)：分位数、吞吐口径与策略对照。
 7. [Scheduler 与选批](docs/chapters/07-scheduler.md)：候选计划、请求数上限和 Decode 轮转。
+8. [Token 预算与分块](docs/chapters/08-token-budget.md)：流程图、状态表、数据结构和代码阅读顺序。
 
-现在主要阅读第 7 章，运行 configs/batch_limit.json 看四请求轮转。先看配置与结果，再读关键实现；数据准备和统计可回看第 5、6 章。旧示例代码可通过 Git 历史查看，当前目录不再保留多套引擎。
+现在主要阅读第 8 章，运行 `python3 run_simulation.py --config configs/token_budget.json --output output/token_budget.json` 看输入分块。先看流程图和状态表，再读对应代码。全局分工与当前不变量见 [ARCHITECTURE](docs/ARCHITECTURE.md)。旧阶段行为见学习日志，当前只保留一套内核。
 
-当前可本地准备 ShareGPT 单轮负载；耗时尚未校准。后续计划：token 预算、分块与混合 batch、简单显存容量和 4090 校准。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md) 和 AGENTS.md。
+当前支持 ShareGPT 单轮负载、人数/token 预算和 Prefill 分块，耗时尚未校准。后续计划：混合 batch 或明确阶段交替、简单 KV 显存容量和 4090 校准。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。

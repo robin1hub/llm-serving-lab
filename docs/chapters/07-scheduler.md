@@ -1,5 +1,7 @@
 # 第 7 章：独立 Scheduler、BatchPlan 与人数上限
 
+本章记录仅人数上限阶段的设计；后续新增 token 预算、输入范围和分块进度见第 8 章，当前契约以 docs/ARCHITECTURE.md 为准。
+
 ## 本步改变什么
 
 过去在事件内核里直接选择整个 active 集合。现在拆成：

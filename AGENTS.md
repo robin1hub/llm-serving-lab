@@ -1,6 +1,6 @@
 # 项目协作约定
 
-开始工作时先读 README.md、docs/HANDOFF.md 和 docs/LEARNING_LOG.md，再检查代码和工作区现状。
+开始工作时先读 README.md、docs/HANDOFF.md、docs/ARCHITECTURE.md，再看 docs/LEARNING_LOG.md 与代码、工作区现状。ARCHITECTURE 是当前契约，LEARNING_LOG 是历史，不混用。
 
 - 用户的首要目标是学习 LLM serving；小步实现，解释思路、假设、代码和结果，不以速度或功能数量为目标。
 - 本目录是独立教学项目。不要修改相邻的 router-simulator、其他实验或已有虚拟环境。
@@ -12,5 +12,6 @@
 - 新机制需先说明语义，再实现；避免提前加入抽象框架、多卡、多级缓存等复杂性。
 - 涉及执行语义的变化，用小型确定性测试核对时间、token 数和边界。
 - 每完成一个学习步骤，同步更新 docs/HANDOFF.md 的现状、验证结果和下一步。
+- 机制变化同时维护 docs/ARCHITECTURE.md 与对应章节；章节包含流程/时序图、状态和数据结构、关键代码映射、假设与测试。不只记录运行命令。
 - 在 docs/LEARNING_LOG.md 追加学习记录；保持历史记录，区分用户理解进度与实现进度。
 - 未经用户要求，不自动推进整个路线；完成当前步骤后留出讨论、阅读和实验空间。
