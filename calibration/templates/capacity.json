@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "record_status": "template",
+  "run_id": null,
+  "startup_index": null,
+  "observed_block_tokens": null,
+  "reported_gpu_blocks": null,
+  "reported_kv_token_capacity": null,
+  "reported_kv_budget_bytes": null,
+  "capacity_source": null,
+  "source_artifact": null,
+  "source_location": null,
+  "weight_vram_bytes": null,
+  "runtime_non_kv_bytes": null,
+  "notes": []
+}

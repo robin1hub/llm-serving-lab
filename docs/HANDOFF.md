@@ -4,9 +4,9 @@
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第14章14-recompute-recovery.md → 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第15章15-calibration-plan.md → 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
-用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户尚未确认理解第14章，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
+用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意进入校准准备，尚未实际测量，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
 ## 当前已实现
 
@@ -62,4 +62,12 @@ Recompute是独占恢复批，受token/chunk/KV预算约束；从0重建到保�
 
 configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms暂停B，A输出4/10/12ms；12–16ms重算B，B输出8/18/20ms。保留B首token8ms，下一间隔10ms；输入逻辑计数4、输出6，额外重算2token另列。输出recovery_records、recovery_pending和recovery_summary；blocked时暂停队列也保留。
 
-验证69测试中67通过、2分词集成跳过；test_recovery覆盖选择、完整及部分Prefill恢复、含历史输出重建、FIFO/小预算、不可恢复阻塞、roofline无LM head及配置。运行python3 run_simulation.py --config configs/recompute.json --output output/recompute.json。阅读第14章流程图/状态图/结构表和编号标记；下一步先讨论恢复代价与策略取舍，不自动实现交换或更多机制。
+验证69测试中67通过、2分词集成跳过；test_recovery覆盖选择、完整及部分Prefill恢复、含历史输出重建、FIFO/小预算、不可恢复阻塞、roofline无LM head及配置。运行python3 run_simulation.py --config configs/recompute.json --output output/recompute.json。阅读第14章流程图/状态图/结构表和编号标记；恢复实现保持不变；目前进入第15章校准材料准备，不自动实现交换。
+
+## 最新：校准准备材料（未实测）
+
+用户授权先做小型校准方案与数据记录格式。本步只新增calibration/plan.json、README和templates，章节15说明容量/执行轮/请求端三个口径及字段与代码映射；没有服务器操作、采集器、拟合器、新Predictor配置或真实计时数据。模板record_status=template且观测null，不能导入为实测。复制至output/calibration/<run_id>/后采集，不提交原始数据。
+
+建议单4090/Qwen3-8B BF16 TP1；先实际KV池容量，B1纯Prefill、B1/4/8纯Decode拟合，独立形状B2等验证，再20请求固定到达对照。首轮不含Mixed/Recompute校准。plan是建议矩阵，不是模拟器/服务配置；实际软件版本/模型/空闲GPU/参数尚未重新核对。Qwen2.5现有tokenizer不能冒充Qwen3。下一步只读核对环境、设计轮次计时并采一个最小形状，之后才扩矩阵/拟合；不能用HTTP TTFT或整次生成延迟拟合单轮Predictor。
+
+本地核对JSON/JSONL解析、模板无测量值、plan拟合与验证形状分离及git diff --check。未改运行代码，不重复整套测试，基线仍69个测试67通过2跳过；用户尚未确认理解方案。

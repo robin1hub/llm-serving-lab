@@ -171,3 +171,10 @@
 - Recompute经同一KV事务和Predictor重建历史上下文，遵守token/chunk预算、不生成输出、不重置TTFT或原Prefill进度。含已处理输出的历史也可重建；不模拟实际文本/张量。
 - 2块×2token例子8ms暂停B，A输出4/10/12ms；B重算12–16ms，原输出时间8/18/20ms，恢复代价落在ITL。额外重算token单列。
 - 69测试中67通过、2分词集成跳过；默认ShareGPT的requests/steps/summary/estimates与上一阶段完全相同。第14章含流程图、状态图、结构表、时序手算与代码阅读标记；HANDOFF/ARCHITECTURE同步。用户尚未确认理解，不自动继续共享、交换或多卡。
+
+## 2026-10-13：第一轮单卡校准准备
+
+- 用户同意先做实验方案和记录格式；新增第15章、calibration建议矩阵及metadata/capacity/batches/requests/comparison空白模板。
+- 将实际KV容量、执行轮耗时、请求端指标分开；明确整次生成/HTTP TTFT不可代替单轮Predictor时间，异步计时、流式chunk与token映射也需核对。
+- 单4090/Qwen3-8B BF16建议条件，分形状fit/validation，先纯P/D再请求级对照；混合/重算和压力验证后续单列。记录框架版本/模型与分词身份，禁止用Qwen2.5长度当Qwen3测量。
+- 只做本地材料，未连接服务器/部署/测量/拟合；模板值null且标template。语法/划分/链接及diff检查，运行代码未变，沿用67通过2跳过基线。用户尚未确认理解方案。

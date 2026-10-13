@@ -102,7 +102,7 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。当前实现到第14章，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。运行机制实现到第14章，第15章是校准材料准备，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
 
 ## 第11章混合执行补充
 
@@ -143,3 +143,9 @@ RecoveryController独占FIFO暂停队列、restoring目标、focus和动作记�
 cached_tokens与生成输出数分别保存；Decode当前最后一个输出尚未处理，不必加入重建。暂停的普通请求进度保持原值，KV表从0恢复，因此不得把prefill_done当恢复游标，游标来自BlockPool已提交cached_tokens。Recompute只构造历史长度/工作量，没有真实token内容或张量。
 
 EventRun/JSON扩展recovery_records、recovery_pending（未恢复目标）和recovery_summary（抢占次数、重算token），schema_version仍1。逻辑输入/输出统计不重复计重算，batch步数包含重算。默认block无恢复记录；ShareGPT requests/steps/summary/estimates保持不变。第14章和test_recovery.py核对时序、历史输出/部分输入、预算、FIFO、失败及预测边界；这是保守进展保护，不是SLO/公平优化。
+
+## 第15章：校准材料与运行时边界
+
+calibration/plan.json是建议实验矩阵，templates/是metadata/capacity/batches/requests/comparison空白记录；不属于load_experiment配置、不被simulate_events加载，无新运行接口。record_status=template不表示实测；原始数据放忽略的output/calibration/<run_id>。时间ms、容量bytes，batch.items沿用PredictorItem；engine_iteration_wall与gpu_forward、request_end_to_end等边界不可混用。请求输出事件只有可靠逐token映射才能和模拟ITL直接比较。
+
+当前仍uncalibrated_roofline/teaching_assumption，无自动采集、拟合/记录校验或校准profile发布能力。下一阶段容量报告先用显式total_blocks核对，耗时按fit/validation分形状独立验证，实际模型/版本和计时边界要先核对。首轮计划不覆盖Mixed/Recompute；详见第15章。

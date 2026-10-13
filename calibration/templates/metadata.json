@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "record_status": "template",
+  "run_id": null,
+  "captured_at_utc": null,
+  "simulator_commit": null,
+  "device": {
+    "gpu_uuid": null,
+    "name": null,
+    "memory_capacity_bytes": null,
+    "driver_version": null,
+    "other_processes": [],
+    "power_limit_w": null,
+    "clock_policy": null
+  },
+  "software": {
+    "vllm_version": null,
+    "vllm_commit": null,
+    "python_version": null,
+    "torch_version": null,
+    "cuda_runtime_version": null,
+    "attention_backend": null
+  },
+  "model": {
+    "name": null,
+    "checkpoint_identity": null,
+    "config_sha256": null,
+    "weight_index_sha256": null,
+    "tokenizer_identity": null,
+    "tokenizer_sha256": null,
+    "chat_template_sha256": null,
+    "weight_dtype": null,
+    "kv_dtype": null,
+    "quantization": null
+  },
+  "engine": {
+    "tensor_parallel_size": null,
+    "gpu_memory_utilization": null,
+    "block_tokens": null,
+    "max_model_len": null,
+    "max_num_seqs": null,
+    "max_num_batched_tokens": null,
+    "chunked_prefill": null,
+    "prefix_caching": null,
+    "speculative_decoding": null,
+    "cpu_offload": null,
+    "cuda_graph_mode": null
+  },
+  "sampling": {
+    "temperature": null,
+    "ignore_eos": null,
+    "requested_output_tokens": null,
+    "seed": null
+  },
+  "measurement": {
+    "timing_scope": null,
+    "clock_source": null,
+    "synchronization_method": null,
+    "profiling_enabled": null,
+    "client_location": null
+  },
+  "artifacts": {
+    "launch_command_file": null,
+    "startup_log": null,
+    "gpu_snapshot_before": null,
+    "gpu_snapshot_after": null,
+    "raw_trace": null,
+    "workload_sha256": null
+  },
+  "notes": []
+}
