@@ -64,9 +64,9 @@ configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms�
 
 验证69测试中67通过、2分词集成跳过；test_recovery覆盖选择、完整及部分Prefill恢复、含历史输出重建、FIFO/小预算、不可恢复阻塞、roofline无LM head及配置。运行python3 run_simulation.py --config configs/recompute.json --output output/recompute.json。阅读第14章流程图/状态图/结构表和编号标记；恢复实现保持不变；目前进入第15章校准材料准备，不自动实现交换。
 
-## 最新：校准准备材料（未实测）
+## 第15章初始校准准备材料（未实测）
 
-用户授权先做小型校准方案与数据记录格式。本步只新增calibration/plan.json、README和templates，章节15说明容量/执行轮/请求端三个口径及字段与代码映射；没有服务器操作、采集器、拟合器、新Predictor配置或真实计时数据。模板record_status=template且观测null，不能导入为实测。复制至output/calibration/<run_id>/后采集，不提交原始数据。
+用户授权先做小型校准方案与数据记录格式。本步只新增calibration/plan.json、README和templates，章节15说明容量/执行轮/请求端三个口径及字段与代码映射；当时没有服务器操作、采集器、拟合器、新Predictor配置或真实计时数据；后续独立环境准备见本页末尾。模板record_status=template且观测null，不能导入为实测。复制至output/calibration/<run_id>/后采集，不提交原始数据。
 
 建议单4090/Qwen3-8B BF16 TP1；先实际KV池容量，B1纯Prefill、B1/4/8纯Decode拟合，独立形状B2等验证，再20请求固定到达对照。首轮不含Mixed/Recompute校准。plan是建议矩阵，不是模拟器/服务配置；实际软件版本/模型/空闲GPU/参数尚未重新核对。Qwen2.5现有tokenizer不能冒充Qwen3。下一步只读核对环境、设计轮次计时并采一个最小形状，之后才扩矩阵/拟合；不能用HTTP TTFT或整次生成延迟拟合单轮Predictor。
 
@@ -77,3 +77,13 @@ configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms�
 详见calibration/server-survey.md。alpha-wang与alpha-du（WHU_4090_4同目标）均6×4090。本次wang空闲0–3，/data剩56G；du空闲4–5，剩67G；两机99%使用。wang的/data/HF_MODELS/Qwen3-8B五个权重分片均存在；du同目录仅小JSON/tokenizer，五分片缺失，先前读取模型元数据不能视为已有权重。du的verl环境包元数据有vLLM0.11.0，但未验证运行；wang有限范围未见现成环境。
 
 目前倾向alpha-wang候选GPU0，直接复用权重，下一步再核对独立环境依赖/驱动及容量余量。无远端修改/安装/模型启动/下载；卡未预留，占用需重查。不要覆盖其他实验环境；compute-apps列表为空不能推断无任务。校准尚未开始。
+
+## 用户最新要求：暂停实际校准，仅准备服务器环境
+
+用户先授权开始校准，随后明确“先不校准，把环境准备好就行”。不得自动启动模型/测量。两机独立目录/data/llm-serving-lab-calibration，venv是新建Python3.10环境，tools内uv0.9.4；主依赖固定vLLM0.11.0/torch2.8.0/transformers4.56.1。杜机已通过导入与uv pip check，报告及159包清单在calibration/environments/alpha-du*；torch CUDA构建12.8。王机也已通过导入/版本/路径/159包依赖检查；官方源慢后改清华HTTPS镜像，结果在server-environment.md和environments/alpha-wang*。
+
+杜机独立模型下载已按用户最新范围停止，只终止本任务download_model.py进程，partial保留；并非完整可运行模型。王机原/data/HF_MODELS/Qwen3-8B五分片仍齐全，后续优先王机，但原候选GPU已被其他任务占用，没有终止他人任务。没有vLLM服务、模型加载、容量实测、耗时采样或拟合；未经运行的计时草稿仅保留ignored output/calibration/drafts，不作为可用采集器发布。
+
+新calibration/scripts/check_environment.py禁止可见GPU，只检查独立prefix、模块导入、包依赖并导出freeze。dependencies_ready只表示依赖通过，GPU运行/模型启动尚未验证。文档server-environment.md包含路径、命令、限制；只有用户再次要求恢复校准后才核对空闲GPU并启动，不自动推进。
+
+最终环境状态：两机dependencies_ready，Python3.10.12，torch CUDA构建12.8；王机检查时剩约40.6GiB，杜机54.0GiB。激活脚本和检查报告/精确清单均保存；仅依赖准备，未测GPU运行或真实推理。

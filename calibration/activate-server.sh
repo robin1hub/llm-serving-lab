@@ -1,0 +1,9 @@
+# 在服务器上source本文件；只激活依赖，不启动模型或服务。
+source /data/llm-serving-lab-calibration/venv/bin/activate
+export PYTHONDONTWRITEBYTECODE=1
+export HF_HOME=/data/llm-serving-lab-calibration/cache/hf
+export TORCH_HOME=/data/llm-serving-lab-calibration/cache/torch
+export XDG_CACHE_HOME=/data/llm-serving-lab-calibration/cache
+export VLLM_CACHE_ROOT=/data/llm-serving-lab-calibration/cache/vllm
+export VLLM_CONFIG_ROOT=/data/llm-serving-lab-calibration/config/vllm
+export VLLM_NO_USAGE_STATS=1

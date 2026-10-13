@@ -149,3 +149,7 @@ EventRun/JSON扩展recovery_records、recovery_pending（未恢复目标）和re
 calibration/plan.json是建议实验矩阵，templates/是metadata/capacity/batches/requests/comparison空白记录；不属于load_experiment配置、不被simulate_events加载，无新运行接口。record_status=template不表示实测；原始数据放忽略的output/calibration/<run_id>。时间ms、容量bytes，batch.items沿用PredictorItem；engine_iteration_wall与gpu_forward、request_end_to_end等边界不可混用。请求输出事件只有可靠逐token映射才能和模拟ITL直接比较。
 
 当前仍uncalibrated_roofline/teaching_assumption，无自动采集、拟合/记录校验或校准profile发布能力。下一阶段容量报告先用显式total_blocks核对，耗时按fit/validation分形状独立验证，实际模型/版本和计时边界要先核对。首轮计划不覆盖Mixed/Recompute；详见第15章。
+
+## 服务器环境准备补充
+
+用户当前暂停实际校准，仅准备依赖。requirements-server.txt固定vLLM/torch/transformers；scripts/check_environment.py是独立服务器工具，与事件模拟器无依赖关系，禁用可见GPU、核对sys.prefix及包依赖、导出精确版本。environments/保存可复现依赖报告，dependencies_ready不等于已测真实推理。无采集/拟合/新Predictor来源；不得自动运行模型。环境说明见calibration/server-environment.md。

@@ -57,6 +57,6 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 
 15. [单卡校准准备](docs/chapters/15-calibration-plan.md)：实验矩阵、测量边界、记录模板与独立验证。
 
-现在主要阅读第 15 章，校准材料在 [calibration/](calibration/README.md)。目前只准备方案与空白模板，尚未采集/拟合；第14章恢复例子保留。运行 `python3 run_simulation.py --config configs/recompute.json --output output/recompute.json` 查看暂停B、完成A、重算B的例子；默认仍为block，抢占需显式启用。第13章容量示例保留。运行 `python3 run_simulation.py --config configs/rtx4090_memory.json --output output/rtx4090_memory.json` 查看服务器4090＋Qwen3-8B容量示例。独立profile在configs/profiles中；1972块来自实读显存/模型元数据和90%使用比例、2GiB预留假设，尚未实际校准。原第12章人工块数实验保留。当前仍单GPU，共享/COW/传输未实现。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
+现在主要阅读第 15 章，校准材料在 [calibration/](calibration/README.md)。目前按用户要求暂停实际校准，仅准备[服务器独立环境](calibration/server-environment.md)，尚未采集/拟合；第14章恢复例子保留。运行 `python3 run_simulation.py --config configs/recompute.json --output output/recompute.json` 查看暂停B、完成A、重算B的例子；默认仍为block，抢占需显式启用。第13章容量示例保留。运行 `python3 run_simulation.py --config configs/rtx4090_memory.json --output output/rtx4090_memory.json` 查看服务器4090＋Qwen3-8B容量示例。独立profile在configs/profiles中；1972块来自实读显存/模型元数据和90%使用比例、2GiB预留假设，尚未实际校准。原第12章人工块数实验保留。当前仍单GPU，共享/COW/传输未实现。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
 
 当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替、混合 batch、KV分页准入与可配置抢占/重算，耗时尚未校准。后续计划：共享/COW、实际容量验证和4090耗时校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。
