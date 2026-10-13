@@ -76,3 +76,9 @@ PYTHONDONTWRITEBYTECODE=1 \
 environments/alpha-wang.json和alpha-du.json保存原始检查报告；对应*-requirements.txt保存各159包精确版本，下一次复现优先使用该清单。包位置均落在项目venv内，Python3.10.12，uv pip check退出0。无模型/GPU计算或校准数据，GPU可运行性仍需以后验证。
 
 用户要求暂停校准；王机可复用原完整权重，杜机额外权重下载已停止且partial保留。没有推理服务或采集进程在后台继续运行。服务器独立目录保留，后续无需重新安装主依赖。磁盘余量只是报告时间的快照。
+
+## 后续启动状态（2026-10-13）
+
+用户随后恢复王服务器实验，两次smoke均未成功：第一次UUID解析兼容问题，已修正为核对UUID后传数字卡号；第二次候选卡占2441MiB，启动保护拒绝。没有加载模型或取得有效容量/耗时数据。用户要求稍等，当前没有运行中的采集器，未终止他人任务。
+
+现改做本地师兄模拟器参照，见第16章与calibration/reference。采集脚本已保存scripts/collect_batches.py、worker_probe.py、batch_records.py和launch_remote.py，真实Worker计时仍未验证。之后恢复前需同步最新版脚本并复查空闲GPU。

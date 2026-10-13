@@ -1,6 +1,6 @@
 # 校准材料入口
 
-当前有方案、空白记录模板及独立服务器环境检查材料，未测量、未拟合；不会被模拟器自动加载。
+当前有方案、模板、独立环境及采集入口，尚无真实GPU数据。已完成师兄模拟器参照拟合；参照不是硬件校准，见[第16章](../docs/chapters/16-reference-comparison.md)及reference/result.json。可选configs/reference_senior.json仅在显式运行时使用。
 
 先看 [第15章](../docs/chapters/15-calibration-plan.md)，然后看 plan.json 和 templates/。
 
@@ -15,8 +15,8 @@
 
 复制到 output/calibration/<run_id>/ 后填写。模板的 null 表示尚未记录，不是0；record_status=template不能作为实测数据。真实记录改为 measured，同时填原始证据。实际命令、启动日志、trace、客户端原始响应等也放在该目录，按metadata引用，原始文件不覆盖。实际数据不提交Git。
 
-metadata的notes记录缺失字段原因，未知值保留null。JSONL每行一个完整JSON，不是一个大数组。采集器、计时插桩、拟合器与模板自动校验尚未实现；本步不更改模拟器行为，也不启动推理任务。
+metadata的notes记录缺失字段原因，未知值保留null。JSONL每行一个完整JSON，不是一个大数组。真实采集入口scripts/collect_batches.py与独立worker_probe.py已实现，GPU运行尚未验证；标准库batch_records.py本地测试通过。run_senior_reference.py已完成模拟器参照拟合，不是硬件拟合器。模板自动完整验收尚未实现。
 
-服务器选择检查见 [server-survey.md](server-survey.md)：优先alpha-wang复用完整Qwen3-8B；此前GPU0候选已被其他任务占用。两机独立依赖环境已准备，用户要求暂停推理/校准。
+服务器选择检查见 [server-survey.md](server-survey.md)：优先alpha-wang复用完整Qwen3-8B；此前GPU0候选已被其他任务占用。两机独立依赖环境已准备，用户随后恢复王服务器实验，但启动失败且卡被占用，最新要求等待空闲卡。
 
-用户最新要求先准备环境、暂不校准。环境路径、固定版本和无GPU检查说明见 [server-environment.md](server-environment.md)。本步不发布实测profile。
+当前改做本地模拟器参照，服务器真实采集等待空闲卡。环境路径、固定版本和无GPU检查说明见 [server-environment.md](server-environment.md)。本步不发布实测profile。

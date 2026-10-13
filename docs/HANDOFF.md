@@ -4,7 +4,7 @@
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第15章15-calibration-plan.md → 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第16章16-reference-comparison.md（本地参照）/第15章（真实采集）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
 用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意进入校准准备，尚未实际测量，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
@@ -22,7 +22,7 @@ AGENTS.md → 本页 → ARCHITECTURE.md → 第15章15-calibration-plan.md → 
 
 ## 当前验证与例子
 
-69测试中67通过，2个分词集成因系统Python缺依赖跳过。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，本步结果output/sharegpt_recovery_regression.json与output/sharegpt_kv_regression.json对照。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
+最新72测试中70通过，2个分词集成因系统Python缺依赖跳过；新增3个采集记录/设备映射测试。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，本步结果output/sharegpt_recovery_regression.json与output/sharegpt_kv_regression.json对照。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -87,3 +87,17 @@ configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms�
 新calibration/scripts/check_environment.py禁止可见GPU，只检查独立prefix、模块导入、包依赖并导出freeze。dependencies_ready只表示依赖通过，GPU运行/模型启动尚未验证。文档server-environment.md包含路径、命令、限制；只有用户再次要求恢复校准后才核对空闲GPU并启动，不自动推进。
 
 最终环境状态：两机dependencies_ready，Python3.10.12，torch CUDA构建12.8；王机检查时剩约40.6GiB，杜机54.0GiB。激活脚本和检查报告/精确清单均保存；仅依赖准备，未测GPU运行或真实推理。
+
+## 最新工作：真实启动暂缓，完成本地师兄参照（2026-10-13）
+
+用户恢复王服务器校准后，两次smoke尝试均失败：wang-qwen3-8b-eager-smoke-20261013-01在vLLM0.11的CUDA UUID解析处失败；已改为先核对物理UUID，再传数字卡号。-02启动前发现GPU0占2441MiB，保护检查拒绝加载。没有模型加载、capacity.json、有效batch耗时或COMPLETE；metadata的started不能视作measured。用户回复“稍等一下吧”，随后授权改做本地师兄参照。不要自行启动服务器采样或终止他人任务。
+
+已提交采集入口collect_batches.py、独立TimedWorker、batch_records.py、launch_remote.py。仅针对vLLM0.11.0：eager、BF16、TP1、禁用prefix/chunk，Worker前后CUDA同步包围execute_model，timing_scope=worker_execute_wall，含预处理/forward/sampling/output，不含Engine Scheduler/RPC/HTTP。不是完整engine_iteration；GPU插桩尚未通过真实运行。smoke输出3token，正式Decode输出32token，逐轮保存实际上下文/实际人数，不把整个生成耗时当batch。服务器已复制之前版本脚本；本地launch_remote包装器整理后尚未重传，恢复时先同步核对。环境导入ready不等于GPU计时ready。
+
+本地参照脚本calibration/scripts/run_senior_reference.py用师兄现有Python3.13环境与native二进制只读运行；-S防自动editable构建、-B禁pyc、无可见GPU。所有缓存/日志/输出写本项目output。按师兄输出解读skill验收schema8、complete、文件SHA、明细数量：1请求输出2token，4事件/290算子。参照报告native源commit=3b374848…，源码HEAD=4b7a96be…，不是最新HEAD构建；result.json保存二进制SHA，两者不得混淆。
+
+固定Qwen3-8B实际结构与共同假设100TFLOP/s/1TB/s，非4090有效性能。单请求输入4输出2；将师兄prefill_delay_min_tokens设1去掉默认小Prefill约50ms等待、轮次间隔1微秒，首输出师兄15.166638ms/我们原始15.139144ms。完整请求结果不用于拟合，16组replay_shape纯P/D工作量用于预测比较。
+
+12组fit、4组validation；dense_factor=1.0121111392281201、attention_factor=0.9053187031593333、开销0。验证最大绝对相对误差3.74%→2.63%，部分Decode变差，fit短Prefill仍低估约6%。不保证全范围，不覆盖Mixed/Recompute/非零context Prefill/ShareGPT。新增可选configs/reference_senior.json，本地运行首输出15.3224ms、完成30.6432ms；默认配置与运行时实现不变，仍uncalibrated_roofline。条件/来源/16组对照已提交calibration/reference/{scenario,result}.json，完整输出忽略于output/calibration/senior-reference-04。
+
+第16章有流程图、结构表、拟合公式、代码重点与结果。72测试中70通过、2分词集成缺依赖跳过，参照配置CLI成功。用户尚未确认理解本步。下一步由用户选择讨论差异，或空闲卡就绪后继续真实smoke；不能将参照系数包装为4090实测校准。

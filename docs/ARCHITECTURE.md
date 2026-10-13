@@ -153,3 +153,11 @@ calibration/plan.json是建议实验矩阵，templates/是metadata/capacity/batc
 ## 服务器环境准备补充
 
 用户当前暂停实际校准，仅准备依赖。requirements-server.txt固定vLLM/torch/transformers；scripts/check_environment.py是独立服务器工具，与事件模拟器无依赖关系，禁用可见GPU、核对sys.prefix及包依赖、导出精确版本。environments/保存可复现依赖报告，dependencies_ready不等于已测真实推理。无采集/拟合/新Predictor来源；不得自动运行模型。环境说明见calibration/server-environment.md。
+
+## 第16章：离线参照与真实采集边界
+
+calibration/scripts是离线工具，不改变Scheduler/Engine/KV执行契约。run_senior_reference.py接收固定scenario，只读加载师兄已有native，先跑单请求DES并验收schema/SHA/数量，再replay固定纯P/D形状；使用相同PredictorItem，12fit/4validation。结果显式标synthetic_simulator_reference_not_hardware_calibration、hardware_measured=false及二进制来源；源HEAD与binary报告commit分开，当前不同。NumPy/YAML等来自师兄已有环境，事件模拟标准库依赖不变。
+
+configs/reference_senior.json是显式可选参照系数，设备速度假设100TFLOP/s/1TB/s，原默认配置不变，Predictor来源仍uncalibrated_roofline。不能用TTFT拟合执行时间；完整DES示例另记调度周期及小Prefill等待条件。不覆盖Mixed/恢复/容量精度。
+
+真实采集入口collect_batches.py/worker_probe.py只针对vLLM0.11.0单卡eager，Worker前后CUDA同步计时worker_execute_wall，不称engine_iteration或gpu_forward。batch_records从实际Scheduler输出提取上下文与工作量，拒绝抢占恢复和多token Decode；UUID核对后数字卡号映射及显存/利用率检查先于vLLM初始化。metadata.started与measured分开，当前启动未成功、无有效实测数据；独立环境依赖ready不代表GPU计时已验证。第15章初始“未实现采集器”描述为历史阶段，当前工具已准备。

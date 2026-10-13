@@ -1,0 +1,708 @@
+{
+  "kind": "synthetic_simulator_reference_not_hardware_calibration",
+  "scenario": {
+    "schema_version": 1,
+    "kind": "simulator_reference_not_hardware_calibration",
+    "model": {
+      "architectures": [
+        "Qwen3ForCausalLM"
+      ],
+      "attention_bias": false,
+      "attention_dropout": 0.0,
+      "bos_token_id": 151643,
+      "eos_token_id": 151645,
+      "head_dim": 128,
+      "hidden_act": "silu",
+      "hidden_size": 4096,
+      "initializer_range": 0.02,
+      "intermediate_size": 12288,
+      "max_position_embeddings": 40960,
+      "max_window_layers": 36,
+      "model_type": "qwen3",
+      "num_attention_heads": 32,
+      "num_hidden_layers": 36,
+      "num_key_value_heads": 8,
+      "rms_norm_eps": 1E-06,
+      "rope_scaling": null,
+      "rope_theta": 1000000,
+      "sliding_window": null,
+      "tie_word_embeddings": false,
+      "torch_dtype": "bfloat16",
+      "transformers_version": "4.51.0",
+      "use_cache": true,
+      "use_sliding_window": false,
+      "vocab_size": 151936
+    },
+    "model_config_sha256": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+    "device": {
+      "name": "common-assumed-device-not-measured-4090",
+      "peak_flops": 100000000000000,
+      "memory_bandwidth_bytes_per_s": 1000000000000,
+      "memory_capacity_bytes": 25757220864
+    },
+    "senior_calibration_params": {},
+    "note": "固定同一Qwen3-8B结构和假设设备，参照拟合只检查两种解析模型，不证明4090性能。"
+  },
+  "senior_git_commit": "4b7a96be2f5749f861e941dff583c9276f722bbe",
+  "native_binary_sha256": "b5b79be3b1901784839009900d714519979f3530a512110a34a3b8872be85a71",
+  "native_binary_path": "../router-simulator/build/cmake/python-editable/_native.cpython-313-x86_64-linux-gnu.so",
+  "native_binary_matches_source_commit": "not_proven",
+  "native_reported_source_commit": "3b374848a67cc4100d57674fad8b9a8aeaf3ec34",
+  "output_audit": {
+    "complete": true,
+    "schema_version": 8,
+    "checksums_verified": true,
+    "detail_record_counts": {
+      "events": 4,
+      "operators": 290
+    }
+  },
+  "single_request_comparison": {
+    "input_tokens": 4,
+    "output_tokens": 2,
+    "senior_token_times_ms": [
+      15.166638239999983,
+      30.31172260799998
+    ],
+    "lab_token_times_ms": [
+      15.139143680000002,
+      30.276665344
+    ],
+    "senior_scheduler_interval_ms": 0.001,
+    "prefill_delay_min_tokens": 1
+  },
+  "factors": {
+    "dense_factor": 1.0121111392281201,
+    "attention_factor": 0.9053187031593333,
+    "batch_overhead_ms": 0.0
+  },
+  "rows": [
+    {
+      "shape_id": "Prefill-B1-L128",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Prefill",
+          "new_tokens": 128,
+          "context_tokens": 0,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 19.20004733952003,
+      "baseline_ms": 17.842307072,
+      "basis_ms": [
+        17.79361120256,
+        0.04869586944,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 285450240.0,
+      "fitted_ms": 18.053197386575878,
+      "baseline_relative_error": -0.07071546457728528,
+      "fitted_relative_error": -0.05973162110822283
+    },
+    {
+      "shape_id": "Prefill-B1-L512",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Prefill",
+          "new_tokens": 512,
+          "context_tokens": 0,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 73.15583262720017,
+      "baseline_ms": 71.91170908160001,
+      "basis_ms": [
+        71.13710501888,
+        0.77460406272,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 1158522624.0,
+      "fitted_ms": 72.69991994757268,
+      "baseline_relative_error": -0.017006484663228072,
+      "fitted_relative_error": -0.006232075601556031
+    },
+    {
+      "shape_id": "Prefill-B1-L2048",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Prefill",
+          "new_tokens": 2048,
+          "context_tokens": 0,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 298.16832654336065,
+      "baseline_ms": 296.8866258944,
+      "basis_ms": [
+        284.51108028416,
+        12.375545610240001,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 4916232960.0,
+      "fitted_ms": 299.160646492176,
+      "baseline_relative_error": -0.00429858081781942,
+      "fitted_relative_error": 0.0033280528496075767
+    },
+    {
+      "shape_id": "Prefill-B1-L256",
+      "split": "validation",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Prefill",
+          "new_tokens": 256,
+          "context_tokens": 0,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 37.157465815040034,
+      "baseline_ms": 35.76880431104001,
+      "basis_ms": [
+        35.574775808000005,
+        0.19402850304,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 573525248.0,
+      "fitted_ms": 36.181284503567966,
+      "baseline_relative_error": -0.03737234156151592,
+      "fitted_relative_error": -0.026271471696461712
+    },
+    {
+      "shape_id": "Prefill-B1-L1024",
+      "split": "validation",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Prefill",
+          "new_tokens": 1024,
+          "context_tokens": 0,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 146.6133371801603,
+      "baseline_ms": 145.35715979264,
+      "basis_ms": [
+        142.26176344064,
+        3.0953963520000003,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 2363906816.0,
+      "fitted_ms": 146.78703567566424,
+      "baseline_relative_error": -0.008567961221540799,
+      "fitted_relative_error": 0.0011847387068919524
+    },
+    {
+      "shape_id": "Decode-B1-L128",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.162796943999991,
+      "baseline_ms": 15.155806208,
+      "basis_ms": [
+        15.136784384,
+        0.019021824,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 2563508.0,
+      "fitted_ms": 15.337328900176065,
+      "baseline_relative_error": -0.0004610452824640454,
+      "fitted_relative_error": 0.011510538380264723
+    },
+    {
+      "shape_id": "Decode-B1-L512",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.219475344000005,
+      "baseline_ms": 15.212429312000001,
+      "basis_ms": [
+        15.136784384,
+        0.075644928,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 2632628.0,
+      "fitted_ms": 15.388590855258201,
+      "baseline_relative_error": -0.00046296155687008955,
+      "fitted_relative_error": 0.011111783253741958
+    },
+    {
+      "shape_id": "Decode-B1-L2048",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.446188944000003,
+      "baseline_ms": 15.438921728,
+      "basis_ms": [
+        15.136784384,
+        0.302137344,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 2909108.0,
+      "fitted_ms": 15.593638675586746,
+      "baseline_relative_error": -0.0004704860225619445,
+      "fitted_relative_error": 0.009546026668540764
+    },
+    {
+      "shape_id": "Decode-B4-L128",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-2",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-3",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.242604095999976,
+      "baseline_ms": 15.214641152000002,
+      "basis_ms": [
+        15.138553856000001,
+        0.076087296,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 10254032.0,
+      "fitted_ms": 15.39078224160403,
+      "baseline_relative_error": -0.0018345253753138113,
+      "fitted_relative_error": 0.009721314328628328
+    },
+    {
+      "shape_id": "Decode-B4-L512",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-2",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-3",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.469317695999973,
+      "baseline_ms": 15.441133568000001,
+      "basis_ms": [
+        15.138553856000001,
+        0.302579712,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 10530512.0,
+      "fitted_ms": 15.595830061932574,
+      "baseline_relative_error": -0.0018219373700792962,
+      "fitted_relative_error": 0.008178277052601768
+    },
+    {
+      "shape_id": "Decode-B4-L2048",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-2",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-3",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 16.376172095999962,
+      "baseline_ms": 16.347103232000002,
+      "basis_ms": [
+        15.138553856000001,
+        1.208549376,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 11636432.0,
+      "fitted_ms": 16.41602134324675,
+      "baseline_relative_error": -0.0017750707448329628,
+      "fitted_relative_error": 0.002433367640080064
+    },
+    {
+      "shape_id": "Decode-B8-L128",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-2",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-3",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-4",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-5",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-6",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-7",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 128,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.349013632000014,
+      "baseline_ms": 15.293087744,
+      "basis_ms": [
+        15.140913152,
+        0.152174592,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 20508064.0,
+      "fitted_ms": 15.462053363507987,
+      "baseline_relative_error": -0.0036436144589395703,
+      "fitted_relative_error": 0.007364625129546054
+    },
+    {
+      "shape_id": "Decode-B8-L512",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-2",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-3",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-4",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-5",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-6",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-7",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 512,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.802440832000011,
+      "baseline_ms": 15.746072576,
+      "basis_ms": [
+        15.140913152,
+        0.605159424,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 21061024.0,
+      "fitted_ms": 15.872149004165076,
+      "baseline_relative_error": -0.003567060088962015,
+      "fitted_relative_error": 0.004411228170771331
+    },
+    {
+      "shape_id": "Decode-B8-L2048",
+      "split": "fit",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-2",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-3",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-4",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-5",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-6",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-7",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 2048,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 17.616149632000003,
+      "baseline_ms": 17.558011904,
+      "basis_ms": [
+        15.140913152,
+        2.417098752,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 23272864.0,
+      "fitted_ms": 17.51253156679343,
+      "baseline_relative_error": -0.0033002517130300557,
+      "fitted_relative_error": -0.005881992794744884
+    },
+    {
+      "shape_id": "Decode-B2-L256",
+      "split": "validation",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 256,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 256,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.227184927999991,
+      "baseline_ms": 15.213166591999999,
+      "basis_ms": [
+        15.137374207999999,
+        0.075792384,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 5173096.0,
+      "fitted_ms": 15.389321317373478,
+      "baseline_relative_error": -0.0009206124484779643,
+      "fitted_relative_error": 0.010647824278757323
+    },
+    {
+      "shape_id": "Decode-B2-L1024",
+      "split": "validation",
+      "items": [
+        {
+          "request_id": "r-0",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 1024,
+          "produces_token": true
+        },
+        {
+          "request_id": "r-1",
+          "phase": "Decode",
+          "new_tokens": 1,
+          "context_tokens": 1024,
+          "produces_token": true
+        }
+      ],
+      "reference_ms": 15.453898527999984,
+      "baseline_ms": 15.439659008,
+      "basis_ms": [
+        15.137374207999999,
+        0.3022848,
+        1
+      ],
+      "reference_logical_operators": 145,
+      "reference_auxiliary_flops": 5449576.0,
+      "fitted_ms": 15.59436913770202,
+      "baseline_relative_error": -0.0009214192764488427,
+      "fitted_relative_error": 0.009089655237966454
+    }
+  ],
+  "default_predictor_changed": false,
+  "hardware_measured": false,
+  "validation_max_abs_error": 0.026271471696461712
+}
