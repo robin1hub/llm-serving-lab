@@ -16,3 +16,5 @@
 复制到 output/calibration/<run_id>/ 后填写。模板的 null 表示尚未记录，不是0；record_status=template不能作为实测数据。真实记录改为 measured，同时填原始证据。实际命令、启动日志、trace、客户端原始响应等也放在该目录，按metadata引用，原始文件不覆盖。实际数据不提交Git。
 
 metadata的notes记录缺失字段原因，未知值保留null。JSONL每行一个完整JSON，不是一个大数组。采集器、计时插桩、拟合器与模板自动校验尚未实现；本步不更改模拟器行为，也不启动服务器任务。
+
+服务器选择检查见 [server-survey.md](server-survey.md)：目前推荐alpha-wang复用完整Qwen3-8B，GPU0只是候选，尚未安装/启动。

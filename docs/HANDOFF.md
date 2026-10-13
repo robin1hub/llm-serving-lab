@@ -71,3 +71,9 @@ configs/recompute.json配2块×2token，A/B同时到达且输入2/输出3。8ms�
 建议单4090/Qwen3-8B BF16 TP1；先实际KV池容量，B1纯Prefill、B1/4/8纯Decode拟合，独立形状B2等验证，再20请求固定到达对照。首轮不含Mixed/Recompute校准。plan是建议矩阵，不是模拟器/服务配置；实际软件版本/模型/空闲GPU/参数尚未重新核对。Qwen2.5现有tokenizer不能冒充Qwen3。下一步只读核对环境、设计轮次计时并采一个最小形状，之后才扩矩阵/拟合；不能用HTTP TTFT或整次生成延迟拟合单轮Predictor。
 
 本地核对JSON/JSONL解析、模板无测量值、plan拟合与验证形状分离及git diff --check。未改运行代码，不重复整套测试，基线仍69个测试67通过2跳过；用户尚未确认理解方案。
+
+## 两台4090服务器检查（2026-10-13，只读）
+
+详见calibration/server-survey.md。alpha-wang与alpha-du（WHU_4090_4同目标）均6×4090。本次wang空闲0–3，/data剩56G；du空闲4–5，剩67G；两机99%使用。wang的/data/HF_MODELS/Qwen3-8B五个权重分片均存在；du同目录仅小JSON/tokenizer，五分片缺失，先前读取模型元数据不能视为已有权重。du的verl环境包元数据有vLLM0.11.0，但未验证运行；wang有限范围未见现成环境。
+
+目前倾向alpha-wang候选GPU0，直接复用权重，下一步再核对独立环境依赖/驱动及容量余量。无远端修改/安装/模型启动/下载；卡未预留，占用需重查。不要覆盖其他实验环境；compute-apps列表为空不能推断无任务。校准尚未开始。
