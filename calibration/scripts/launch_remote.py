@@ -16,6 +16,7 @@ def main() -> int:
     parser.add_argument("--model", type=Path, default=Path("/data/HF_MODELS/Qwen3-8B"))
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     parser.add_argument("--max-existing-memory-mib", type=int, default=64)
+    parser.add_argument("--matrix", type=Path)
     args = parser.parse_args()
     if Path(args.run_id).name != args.run_id or args.run_id in (".", ".."):
         raise ValueError("run-id必须是单个目录名")
@@ -30,6 +31,8 @@ def main() -> int:
                "--max-existing-memory-mib", str(args.max_existing_memory_mib)]
     if args.smoke:
         command.append("--smoke")
+    if args.matrix:
+        command.extend(["--matrix", str(args.matrix)])
     # 所有缓存进入独立目录；卡号由采集器再次核对UUID及占用后决定。
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPATH": str(root),
            "CUDA_DEVICE_ORDER": "PCI_BUS_ID", "HF_HOME": str(root / "cache/hf"),

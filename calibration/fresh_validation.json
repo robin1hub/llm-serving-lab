@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "purpose": "frozen_test_only_half_repeat_half_novel",
+  "seed": 20261014,
+  "token_base": 2000,
+  "warmups": 5,
+  "repeats": 20,
+  "shapes": [
+    {"phase": "Prefill", "batch_size": 1, "length": 128, "split": "repeat"},
+    {"phase": "Prefill", "batch_size": 1, "length": 256, "split": "repeat"},
+    {"phase": "Prefill", "batch_size": 1, "length": 512, "split": "repeat"},
+    {"phase": "Prefill", "batch_size": 1, "length": 2048, "split": "repeat"},
+    {"phase": "Decode", "batch_size": 1, "length": 128, "split": "repeat"},
+    {"phase": "Decode", "batch_size": 4, "length": 512, "split": "repeat"},
+    {"phase": "Decode", "batch_size": 8, "length": 2048, "split": "repeat"},
+    {"phase": "Decode", "batch_size": 2, "length": 1024, "split": "repeat"},
+    {"phase": "Prefill", "batch_size": 1, "length": 192, "split": "novel"},
+    {"phase": "Prefill", "batch_size": 1, "length": 384, "split": "novel"},
+    {"phase": "Prefill", "batch_size": 1, "length": 768, "split": "novel"},
+    {"phase": "Prefill", "batch_size": 1, "length": 1536, "split": "novel"},
+    {"phase": "Decode", "batch_size": 3, "length": 384, "split": "novel"},
+    {"phase": "Decode", "batch_size": 3, "length": 1536, "split": "novel"},
+    {"phase": "Decode", "batch_size": 6, "length": 768, "split": "novel"},
+    {"phase": "Decode", "batch_size": 6, "length": 1536, "split": "novel"}
+  ]
+}

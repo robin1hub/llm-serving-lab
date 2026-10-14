@@ -4,9 +4,9 @@
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第17章17-measured-comparison.md（最新硬件对照）/第15章（真实采集）/第16章（参照）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第18章18-calibration-validation.md（最新拟合/验证）/第17章（原始对照）/第15章（真实采集）/第16章（参照）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
-用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，尚未正式拟合，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
+用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，已完成限定范围拟合和新形状验证，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
 ## 当前已实现
 
@@ -137,3 +137,19 @@ launch_remote新增--model，其他默认不变。du-qwen25-3b-eager-matrix-2026
 ## 预测公式详细讲解补充（2026-10-14）
 
 用户询问预测时间的计算过程。已核对当前代码并实际打印D1/context128、P128、P2048的OperatorEstimate数字；第10章末尾新增工作量→算力/带宽→max→两组相加、权重显存读取/组批共享、attention位置对数及真实模型手算。D首轮6.176444ms、P128为7.133373ms、P2048为119.838831ms，与第17章的多轮汇总口径区别说明。强调速度是假设、固定差额不能直接当开销、factor不是已测GPU物理参数。仅讲解/文档，无新采样、拟合或公式变更；用户理解尚未确认。
+
+## 最新：拟合并重采8旧/8新验证完成（2026-10-14）
+
+用户授权校准再测试，要求一半新类型；明确选择“新长度和batch人数”，仍纯P/D。询问Mixed时已解释原记录的混合过渡被排除，专门Mixed验证尚未做；后续先沿用参数测试，误差大再补充模型/拟合，不默认另起一套参数。
+
+fit_timing.py只读原du-qwen25-3b-eager-matrix-20261014-02的12组split=fit，原始SHA/基线Predictor身份检查，20重复等权基函数；标准库非负最小二乘有效集合、带主元消元。得到dense_factor=0.35379254965754375、attention_factor=4.3110183582864、batch_overhead_ms=14.168541970007391；profile configs/calibrated_qwen25_3b.json SHA=229f40d9ecad321b3631de1c65f0614f0dcb509937addf5e7027a3586c9e0dce，生成后冻结。原4组validation误差+2.57/-7.65/-4.68/-3.40%，未调参。训练来源报告measurements/du-qwen25-fit-20261014.json。
+
+calibration/fresh_validation.json在新采集前固定16形状、8repeat/8novel（按形状数，不保证单请求数正好半数）。旧P128/256/512/2048，D B1/C128、B4/C512、B8/C2048、B2/C1024；新P192/384/768/1536，D B3/C384、B3/C1536、B6/C768、B6/C1536。seed20261014、token_base2000（旧1000），仍精确token合成输入，非ShareGPT/请求级时序。collector新增--matrix，默认原矩阵/seed保持；matrix_plan.py纯标准库校验，复制杜机独立目录。
+
+杜机GPU4/3B/BF16/TP1/50%显存、vLLM0.11 eager Worker同步，实际chunk=True/prefix=False，与训练条件相同。du-qwen25-3b-eager-fresh-20261014-03完成400次生成/6874Worker记录、每形状5warmup/20有效重复、退出0/COMPLETE/GPU4恢复4MiB。validate_fresh.py核对冻结profile SHA、矩阵/模型/软件/有效运行参数/输出数，再复用compare_rows匹配实际工作量，测试不反向拟合。
+
+同一新数据：校准前平均绝对误差46.27%→校准后5.95%，最大13.65%；旧8组48.30%→6.53%、最大11.63%；新8组44.24%→5.36%、最大13.65%。最大新P384高估，16形状均在此前20%教学阈值内。不要把原轮54.39%和新轮5.95%直接当同数据对照。新摘要measurements/du-qwen25-fresh-validation-20261014.json，完整原始数据/逐轮对照在ignored output/calibration对应run及du-qwen25-fresh-validation-01，远端保留。
+
+仅验证Qwen2.5-3B/4090/当前边界/范围附近纯P/D。factor是补偿参数，不是单独测出的物理性能；新长度在原训练范围附近，不保证外推、其他模型/size/显卡/precision/CUDAGraph/框架/TP、Mixed/Recompute/异构上下文或TTFT。公式通用，但参数和精度声明限定profile条件。核心Engine/Predictor不改、默认配置不改；source字段仍固定uncalibrated_roofline，尚未做校准证明绑定的运行时元数据接口，真实来源以独立报告为准。
+
+第18章完整流程/结构/参数/新数据/范围及命令；12个采集专项测试通过（参数恢复/边界、validation隔离、半数新形状、最大误差等），校准profile CLI成功加载；4token例子只是配置核对，未验证该范围。用户学习理解尚未确认，后续讨论Mixed测试与跨模型验证，不自动推进。

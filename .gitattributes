@@ -1,1 +1,2 @@
-* text=auto eol=lf
+# 冻结profile以文件SHA绑定，Windows检出时也保留LF，避免仅换行变化破坏验证身份。
+configs/calibrated_qwen25_3b.json text eol=lf

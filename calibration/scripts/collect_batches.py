@@ -10,6 +10,7 @@ import subprocess
 from datetime import datetime, timezone
 from time import perf_counter
 from batch_records import select_device
+from matrix_plan import load_matrix_plan
 
 
 def main() -> None:
@@ -21,7 +22,11 @@ def main() -> None:
     parser.add_argument("--max-existing-memory-mib", type=int, default=64)
     parser.add_argument("--decode-output-tokens", type=int, default=32)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--matrix", type=Path)
     args = parser.parse_args()
+    if args.matrix and args.smoke:
+        raise ValueError("自定义矩阵不能与smoke混用")
+    plan = load_matrix_plan(args.matrix) if args.matrix else None
     if not 0 < args.gpu_memory_utilization < 1:
         raise ValueError("显存使用比例必须在0与1之间")
     if args.output.exists():
@@ -46,7 +51,7 @@ def main() -> None:
                     gpu_memory_utilization=args.gpu_memory_utilization, max_model_len=4096, max_num_seqs=8,
                     max_num_batched_tokens=4096, block_size=16, enforce_eager=True,
                     enable_prefix_caching=False, enable_chunked_prefill=False,
-                    worker_cls="worker_probe.TimedWorker", seed=42,
+                    worker_cls="worker_probe.TimedWorker", seed=plan["seed"] if plan else 42,
                     disable_log_stats=True)
     metadata = {
         "schema_version": 1, "record_status": "started", "run_id": args.output.name,
@@ -57,6 +62,8 @@ def main() -> None:
         "profiling_enabled": False, "cuda_graph_mode": "eager",
         "shared_gpu_trial": args.max_existing_memory_mib > 64,
         "max_existing_memory_mib": args.max_existing_memory_mib,
+        "experiment_matrix": plan,
+        "experiment_matrix_sha256": hashlib.sha256(args.matrix.read_bytes()).hexdigest() if plan else None,
         "model_config": json.loads((args.model / "config.json").read_text()),
         "hashes": {name: hashlib.sha256((args.model / name).read_bytes()).hexdigest()
                    for name in ("config.json", "model.safetensors.index.json", "tokenizer.json")},
@@ -83,18 +90,24 @@ def main() -> None:
                for b in batches for n in lengths]
     if args.smoke:
         shapes = [("Prefill", 1, 128, "smoke"), ("Decode", 1, 128, "smoke")]
+    elif plan:
+        shapes = [(shape["phase"], shape["batch_size"], shape["length"], shape["split"])
+                  for shape in plan["shapes"]]
     with (args.output / "batches.jsonl").open("w") as rows_file, \
             (args.output / "generation_checks.jsonl").open("w") as checks:
         for phase, batch_size, length, split in shapes:
             shape_id = f"{phase}-B{batch_size}-L{length}"
             warmups, repeats = (1, 2) if args.smoke else (5, 20)
+            if plan:
+                warmups, repeats = plan["warmups"], plan["repeats"]
             for repeat in range(warmups + repeats):
                 sample = {"run_id": args.output.name, "shape_id": shape_id,
                           "sample_id": f"{shape_id}-{repeat}", "split": split,
                           "is_warmup": repeat < warmups, "target_phase": phase}
                 llm.collective_rpc("set_calibration_sample", args=(sample,))
                 # 【重点3】精确token数直接输入，避免字符长度被误认成token长度。
-                prompts = [{"prompt_token_ids": [1000 + i] * length} for i in range(batch_size)]
+                token_base = plan["token_base"] if plan else 1000
+                prompts = [{"prompt_token_ids": [token_base + i] * length} for i in range(batch_size)]
                 output_len = 1 if phase == "Prefill" else (3 if args.smoke else args.decode_output_tokens)
                 started = perf_counter()
                 outputs = llm.generate(prompts, SamplingParams(temperature=0, max_tokens=output_len,

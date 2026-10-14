@@ -47,6 +47,7 @@ def compare_rows(rows: list[dict], predictor: Predictor) -> tuple[list[dict], li
             "sample_id": row["sample_id"], "iteration_index": row["iteration_index"],
             "split": row["split"], "measured_ms": duration, "predicted_ms": estimate.duration_ms,
             "relative_error": estimate.duration_ms / duration - 1,
+            "basis_ms": [operator.duration_ms for operator in getattr(estimate, "operators", ())],
             "context_min": min(item.context_tokens for item in items),
             "context_max": max(item.context_tokens for item in items),
         })

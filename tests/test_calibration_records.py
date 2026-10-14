@@ -11,6 +11,9 @@ from calibration.scripts.summarize_smoke import summarize
 from calibration.scripts.compare_measured import compare_rows
 from calibration.scripts.compare_senior_measured import SeniorReplayPredictor, replay_requests
 from simulator.predictor import PredictorItem
+from calibration.scripts.fit_timing import fit_nonnegative, training_basis
+from calibration.scripts.matrix_plan import load_matrix_plan
+from calibration.scripts.validate_fresh import summarize_errors
 
 
 def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
@@ -21,6 +24,38 @@ def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
 
 
 class CalibrationRecordTests(unittest.TestCase):
+    def test_validation_reports_worst_shape_and_does_not_hide_it_in_mean(self):
+        report = summarize_errors([{"error": -0.01}, {"error": 0.39}], "error")
+        self.assertAlmostEqual(report["mean_absolute_relative_error"], 0.2)
+        self.assertEqual(report["max_absolute_relative_error"], 0.39)
+        self.assertFalse(report["all_shapes_within_20_percent"])
+
+    def test_fitter_recovers_positive_parameters_and_enforces_boundary(self):
+        features = [[1, 0.2, 1], [2, 0.1, 1], [4, 2, 1], [8, 5, 1]]
+        targets = [2 * x[0] + 0.5 * x[1] + 3 for x in features]
+        for fitted, expected in zip(fit_nonnegative(features, targets), (2, 0.5, 3)):
+            self.assertAlmostEqual(fitted, expected, places=7)
+        boundary = fit_nonnegative(features, [x[0] + 2 for x in features])
+        self.assertGreater(boundary[1], 0)
+        self.assertLess(boundary[1], 1e-6)
+        self.assertGreaterEqual(boundary[2], 0)
+
+    def test_validation_values_do_not_enter_training_basis(self):
+        summaries = [{"shape_id": "P-fit", "split": "fit", "measured_median_ms": 10},
+                     {"shape_id": "P-heldout", "split": "validation", "measured_median_ms": 999999}]
+        details = [{"shape_id": "P-fit", "sample_id": "a", "basis_ms": [1, 2]},
+                   {"shape_id": "P-heldout", "sample_id": "b", "basis_ms": [999999, 999999]}]
+        self.assertEqual(training_basis(summaries, details), ([[1, 2, 1]], [10], ["P-fit"]))
+
+    def test_fresh_matrix_is_half_novel_and_separate_from_old_shapes(self):
+        path = Path(__file__).resolve().parents[1] / "calibration/fresh_validation.json"
+        plan = load_matrix_plan(path)
+        old_report = json.loads((path.parent / "measurements/du-qwen25-3b-matrix-20261014.json").read_text())
+        old = {row["shape_id"] for row in old_report["shapes"]}
+        for shape in plan["shapes"]:
+            shape_id = f'{shape["phase"]}-B{shape["batch_size"]}-L{shape["length"]}'
+            self.assertEqual(shape_id in old, shape["split"] == "repeat")
+
     def test_senior_adapter_keeps_original_prompt_end_and_growing_context(self):
         item = PredictorItem("A", "Decode", 1, 145, True)
         rows = replay_requests((item,), {"A": 128})

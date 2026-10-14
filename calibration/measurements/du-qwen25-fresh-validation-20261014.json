@@ -1,0 +1,530 @@
+{
+  "schema_version": 1,
+  "kind": "frozen_calibration_fresh_half_novel_validation",
+  "run_id": "du-qwen25-3b-eager-fresh-20261014-03",
+  "training_run_id": "du-qwen25-3b-eager-matrix-20261014-02",
+  "refit_on_fresh_data": false,
+  "scope": "Qwen2.5-3B BF16 TP1 RTX4090 vLLM0.11 eager synchronized Worker wall",
+  "profile_sha256": "229f40d9ecad321b3631de1c65f0614f0dcb509937addf5e7027a3586c9e0dce",
+  "parameters": {
+    "dense_factor": 0.35379254965754375,
+    "attention_factor": 4.3110183582864,
+    "batch_overhead_ms": 14.168541970007391
+  },
+  "predictor": {
+    "kind": "roofline",
+    "model": {
+      "num_layers": 36,
+      "hidden_size": 2048,
+      "intermediate_size": 11008,
+      "num_attention_heads": 16,
+      "num_kv_heads": 2,
+      "vocab_size": 151936,
+      "weight_bytes_per_element": 2,
+      "activation_bytes_per_element": 2,
+      "kv_bytes_per_element": 2
+    },
+    "device": {
+      "name": "4090-Qwen25-3B-vllm011-eager-worker-wall-fitted",
+      "peak_flops": 100000000000000,
+      "memory_bandwidth_bytes_per_s": 1000000000000
+    },
+    "calibration": {
+      "dense_factor": 0.35379254965754375,
+      "attention_factor": 4.3110183582864,
+      "batch_overhead_ms": 14.168541970007391
+    }
+  },
+  "matrix": {
+    "schema_version": 1,
+    "purpose": "frozen_test_only_half_repeat_half_novel",
+    "seed": 20261014,
+    "token_base": 2000,
+    "warmups": 5,
+    "repeats": 20,
+    "shapes": [
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 128,
+        "split": "repeat"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 256,
+        "split": "repeat"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 512,
+        "split": "repeat"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 2048,
+        "split": "repeat"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 1,
+        "length": 128,
+        "split": "repeat"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 4,
+        "length": 512,
+        "split": "repeat"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 8,
+        "length": 2048,
+        "split": "repeat"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 2,
+        "length": 1024,
+        "split": "repeat"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 192,
+        "split": "novel"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 384,
+        "split": "novel"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 768,
+        "split": "novel"
+      },
+      {
+        "phase": "Prefill",
+        "batch_size": 1,
+        "length": 1536,
+        "split": "novel"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 3,
+        "length": 384,
+        "split": "novel"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 3,
+        "length": 1536,
+        "split": "novel"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 6,
+        "length": 768,
+        "split": "novel"
+      },
+      {
+        "phase": "Decode",
+        "batch_size": 6,
+        "length": 1536,
+        "split": "novel"
+      }
+    ]
+  },
+  "groups": {
+    "all": {
+      "baseline": {
+        "shape_count": 16,
+        "mean_absolute_relative_error": 0.46270611161812214,
+        "max_absolute_relative_error": 0.6334384802419785,
+        "all_shapes_within_20_percent": false
+      },
+      "calibrated": {
+        "shape_count": 16,
+        "mean_absolute_relative_error": 0.05945459310720322,
+        "max_absolute_relative_error": 0.13647103569104746,
+        "all_shapes_within_20_percent": true
+      }
+    },
+    "repeat": {
+      "baseline": {
+        "shape_count": 8,
+        "mean_absolute_relative_error": 0.48297326781841177,
+        "max_absolute_relative_error": 0.630403844108649,
+        "all_shapes_within_20_percent": false
+      },
+      "calibrated": {
+        "shape_count": 8,
+        "mean_absolute_relative_error": 0.06531783345708857,
+        "max_absolute_relative_error": 0.11633361077557858,
+        "all_shapes_within_20_percent": true
+      }
+    },
+    "novel": {
+      "baseline": {
+        "shape_count": 8,
+        "mean_absolute_relative_error": 0.44243895541783235,
+        "max_absolute_relative_error": 0.6334384802419785,
+        "all_shapes_within_20_percent": false
+      },
+      "calibrated": {
+        "shape_count": 8,
+        "mean_absolute_relative_error": 0.05359135275731787,
+        "max_absolute_relative_error": 0.13647103569104746,
+        "all_shapes_within_20_percent": true
+      }
+    }
+  },
+  "shapes": [
+    {
+      "shape_id": "Prefill-B1-L128",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 18.136371858417988,
+      "predicted_median_ms": 16.788626608173846,
+      "relative_error": -0.07431173449493356,
+      "sample_median_min_ms": 17.735091969370842,
+      "sample_median_max_ms": 21.532127633690834,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.6066813442772984,
+      "baseline_predicted_ms": 7.133373399039999
+    },
+    {
+      "shape_id": "Prefill-B1-L256",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 17.800812609493732,
+      "predicted_median_ms": 19.614810921865057,
+      "relative_error": 0.1019053653429205,
+      "sample_median_min_ms": 17.059326171875,
+      "sample_median_max_ms": 19.012419506907463,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.1961691752224477,
+      "baseline_predicted_ms": 14.3088418816
+    },
+    {
+      "shape_id": "Prefill-B1-L512",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 23.640422150492668,
+      "predicted_median_ms": 25.892083845816206,
+      "relative_error": 0.09524625579821189,
+      "sample_median_min_ms": 23.142213001847267,
+      "sample_median_max_ms": 24.96975101530552,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": 0.21845260670862054,
+      "baseline_predicted_ms": 28.804733992960003
+    },
+    {
+      "shape_id": "Prefill-B1-L2048",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 87.35985402017832,
+      "predicted_median_ms": 81.05304169344754,
+      "relative_error": -0.07219348518226731,
+      "sample_median_min_ms": 86.50079555809498,
+      "sample_median_max_ms": 89.14366737008095,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": 0.3717837798602517,
+      "baseline_predicted_ms": 119.83883075584001
+    },
+    {
+      "shape_id": "Decode-B1-L128",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 15.798854641616344,
+      "predicted_median_ms": 16.374924221688527,
+      "relative_error": 0.036462743226634675,
+      "sample_median_min_ms": 15.698891133069992,
+      "sample_median_max_ms": 15.84688015282154,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.6090224566198018,
+      "baseline_predicted_ms": 6.176997376
+    },
+    {
+      "shape_id": "Decode-B4-L512",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 16.911413986235857,
+      "predicted_median_ms": 16.687835590648405,
+      "relative_error": -0.013220561909809692,
+      "sample_median_min_ms": 16.814181581139565,
+      "sample_median_max_ms": 16.937206499278545,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.630403844108649,
+      "baseline_predicted_ms": 6.2503936
+    },
+    {
+      "shape_id": "Decode-B8-L2048",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 540,
+      "measured_median_ms": 16.99886377900839,
+      "predicted_median_ms": 18.97640298150263,
+      "relative_error": 0.11633361077557858,
+      "sample_median_min_ms": 16.888445243239403,
+      "sample_median_max_ms": 17.047712579369545,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 180,
+        "mixed_or_other_phase": 100,
+        "partial_batch": 80
+      },
+      "baseline_relative_error": -0.6010120906801195,
+      "baseline_predicted_ms": 6.78234112
+    },
+    {
+      "shape_id": "Decode-B2-L1024",
+      "split": "repeat",
+      "repetitions": 20,
+      "worker_rounds": 601,
+      "measured_median_ms": 16.900187358260155,
+      "predicted_median_ms": 16.68270035250804,
+      "relative_error": -0.01286891092635234,
+      "sample_median_min_ms": 16.808745451271534,
+      "sample_median_max_ms": 16.92578475922346,
+      "context_min": 1024,
+      "context_max": 1054,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 39,
+        "partial_batch": 19
+      },
+      "baseline_relative_error": -0.6302608450701053,
+      "baseline_predicted_ms": 6.2486609920000005
+    },
+    {
+      "shape_id": "Prefill-B1-L192",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 17.78577733784914,
+      "predicted_median_ms": 18.175681085995755,
+      "relative_error": 0.02192222137611477,
+      "sample_median_min_ms": 16.851184889674187,
+      "sample_median_max_ms": 18.669288605451584,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.39754852211279346,
+      "baseline_predicted_ms": 10.71506784256
+    },
+    {
+      "shape_id": "Prefill-B1-L384",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 19.929497502744198,
+      "predicted_median_ms": 22.649296667745844,
+      "relative_error": 0.13647103569104746,
+      "sample_median_min_ms": 19.431959837675095,
+      "sample_median_max_ms": 20.796850323677063,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": 0.08044012365465081,
+      "baseline_predicted_ms": 21.532628746239997
+    },
+    {
+      "shape_id": "Prefill-B1-L768",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 35.27613263577223,
+      "predicted_median_ms": 33.00256249852566,
+      "relative_error": -0.06445066302253954,
+      "sample_median_min_ms": 35.12933850288391,
+      "sample_median_max_ms": 35.634977743029594,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": 0.23295543992071366,
+      "baseline_predicted_ms": 43.493899632639994
+    },
+    {
+      "shape_id": "Prefill-B1-L1536",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 66.78433902561665,
+      "predicted_median_ms": 59.333232829203865,
+      "relative_error": -0.11156966296476689,
+      "sample_median_min_ms": 66.60757400095463,
+      "sample_median_max_ms": 68.03700514137745,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": 0.32847070160519265,
+      "baseline_predicted_ms": 88.7210377216
+    },
+    {
+      "shape_id": "Decode-B3-L384",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 16.958946362137794,
+      "predicted_median_ms": 16.542874414417376,
+      "relative_error": -0.02453406826318716,
+      "sample_median_min_ms": 16.832406632602215,
+      "sample_median_max_ms": 17.01297890394926,
+      "context_min": 384,
+      "context_max": 414,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.6334384802419785,
+      "baseline_predicted_ms": 6.2164971520000005
+    },
+    {
+      "shape_id": "Decode-B3-L1536",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 16.916080377995968,
+      "predicted_median_ms": 17.09210670632349,
+      "relative_error": 0.010405857881622183,
+      "sample_median_min_ms": 16.82108733803034,
+      "sample_median_max_ms": 17.2466104850173,
+      "context_min": 1536,
+      "context_max": 1566,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.6249781867759394,
+      "baseline_predicted_ms": 6.343899136000001
+    },
+    {
+      "shape_id": "Decode-B6-L768",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 16.955594532191753,
+      "predicted_median_ms": 17.099809563534038,
+      "relative_error": 0.008505454118313605,
+      "sample_median_min_ms": 16.86918456107378,
+      "sample_median_max_ms": 17.0047739520669,
+      "context_min": 768,
+      "context_max": 798,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.6256988785647952,
+      "baseline_predicted_ms": 6.346498048000001
+    },
+    {
+      "shape_id": "Decode-B6-L1536",
+      "split": "novel",
+      "repetitions": 20,
+      "worker_rounds": 580,
+      "measured_median_ms": 16.968880780041218,
+      "predicted_median_ms": 17.832119286075518,
+      "relative_error": 0.05087185874095135,
+      "sample_median_min_ms": 16.860533505678177,
+      "sample_median_max_ms": 17.000112682580948,
+      "context_min": 1536,
+      "context_max": 1566,
+      "excluded": {
+        "warmup": 170,
+        "mixed_or_other_phase": 60,
+        "partial_batch": 40
+      },
+      "baseline_relative_error": -0.6159813104665957,
+      "baseline_predicted_ms": 6.51636736
+    }
+  ],
+  "raw_worker_rounds": 6874,
+  "generation_checks": 400,
+  "software": {
+    "vllm": "0.11.0",
+    "torch": "2.8.0",
+    "transformers": "4.56.1"
+  },
+  "effective_engine": {
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": false,
+    "gpu_memory_utilization": 0.5
+  },
+  "raw_artifact_sha256": {
+    "metadata.json": "5f7acd79162582369a6c2b20b553e62d45beb48ee928f76bc939850d211b63fc",
+    "capacity.json": "0f2e929cebdf135567c2d5cae96f849e7411b99ecda5d77505360ec23caa0d6a",
+    "batches.jsonl": "9abc03cad92c8c0f8f61d86bbfe1b27c6dfbae595d1b15609546fe7e869f3856",
+    "generation_checks.jsonl": "0ee27f435633cdc07251aa7be8aa4603785a1b07e59fc733e4dc5c40bb83ea93",
+    "startup.log": "ec7a75979057d18264d2d74128b276a55c950e0eb8815846e5abff36b36cd718",
+    "COMPLETE": "98e4b0be7428d10bcd6338e457e25eb11d5a0a9e85e0b33b4243d20996116075"
+  }
+}

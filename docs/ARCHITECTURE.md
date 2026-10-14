@@ -179,3 +179,11 @@ configs/measure_qwen25_3b.json只改模型结构、速度仍假设100TFLOP/s/1TB
 ## 同一实测的师兄估算契约
 
 compare_senior_measured.py复用compare_rows筛选/重复汇总，原始文件SHA与现有基线报告绑定；逐组断言相同实测/有效轮次/排除/context范围。replay_requests把实际PredictorItem映射到纯P/D范围，prompt_end保存原输入，context与range随Decode增长；按完整工作量缓存，不按请求ID缓存。官方replay_shape只读native估算，无DES/在线Python状态镜像，不能产生或冒充schema8请求输出。默认解析参数、同一速度假设，未拟合、未改核心配置；来源与范围限制见第17章新增三方表。
+
+## 第18章：离线拟合与冻结profile验证契约
+
+fit_timing只从旧split=fit形状构造训练基函数，相对平方误差等权、两个factor>0/开销>=0；profile SHA写入训练报告，之后先评估原validation再采新测试，不回流新数据。compare_rows的逐轮details增加basis_ms以支持解释/拟合，核心事件模拟结果不变。
+
+collector/launch_remote新增可选--matrix，矩阵schema1固定16纯P/D、一半repeat一半novel，配置warmups/repeats/seed/token_base及记录SHA；不传时保留原采样行为。validate_fresh要求profile/矩阵/模型/软件/有效参数匹配、COMPLETE、输出和有效重复通过；按same actual items比较基线/校准，分别报告复测/novel及最大误差。
+
+configs/calibrated_qwen25_3b.json是可选测量参数，来源/条件/范围在fit和fresh报告。新轮平均误差5.95%、最大13.65%仅是已测3B/4090/Worker同步eager纯P/D范围观测，未声明所有模型精度；Mixed仍未专门验证。BatchEstimate.source暂仍原uncalibrated_roofline，尚未加绑定证明的来源接口，不能据此否认显式系数生效或宣称其他profile已校准。第18章解释公式通用和参数专用。
