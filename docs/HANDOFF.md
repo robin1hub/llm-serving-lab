@@ -125,3 +125,11 @@ launch_remote新增--model，其他默认不变。du-qwen25-3b-eager-matrix-2026
 16组等权平均绝对相对误差54.39%、最大64.14%。P128实测19.0245ms/预测7.1334（-62.50%）；P512 23.6084/28.8047（+22.01%）；P2048 87.0746/119.8388（+37.63%）；D B1/C128 16.1516/6.1770（-61.76%）。D实际context随生成到C+30，完整轮次人数/上下文均匹配。短P和D偏快、长P偏慢；固定开销/有效速度等只是待检验解释，不称已证明。
 
 摘要已提交calibration/measurements/du-qwen25-3b-matrix-20261014.json，16组表/流程图/结构/统计和代码映射在第17章。fit_performed=False，未发布硬件校准profile，基础Engine/Predictor/default配置不变。6个采集专项测试通过，新基线CLI运行成功。用户尚未确认理解这轮结果；下一步讨论误差，再用原fit/validation划分拟合验证，不自动扩展Mixed/多卡或宣称请求级校准完成。
+
+## 最新：同一实测由师兄Predictor预测（2026-10-14）
+
+用户要求师兄预测Qwen2.5-3B这份数据。compare_senior_measured.py只读加载原有native二进制，官方replay_shape接口；统一3B结构/BF16/TP1/假设100TFLOP/s与1TB/s、师兄默认calibration_params={}，不拟合。SHA核对同一份杜机-02实测，复用compare_rows逐组断言实测中位数/重复/轮次/排除/context范围相同。6681有效轮次、541唯一工作量，request prompt_end来自原输入长度，增长context/range独立保留；只支持纯P/D，不运行DES或调度等待。
+
+师兄平均绝对相对误差54.17%、最大64.04%，我们54.39%、64.14%。P128实测19.0245/我们7.1334/师兄7.8154ms；P2048实测87.0746/我们119.8388/师兄120.4810ms；D B1/C128实测16.1516/我们6.1770/师兄6.1816ms。证明本次两种解析配置都偏離实测，不代表师兄已校准配置或所有功能精度。不能称这些速度是实测有效速度，不能把离线执行估算冒充请求级TTFT/ITL。
+
+第17章新增三方完整表/适配逻辑/复现；提交摘要calibration/measurements/senior-du-qwen25-3b-20261014.json，本地完整输出output/calibration/senior-du-qwen25-comparison-01。native SHA与第16章同一文件，旧build commit与当前HEAD不同，未重编译/修改师兄。8个采集专项测试通过，正式拟合尚未做；下一步仍待用户讨论。

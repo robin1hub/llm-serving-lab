@@ -175,3 +175,7 @@ launch_remote支持显式--model，独立采集器不绑定Qwen3名称。Worker�
 compare_measured.py读取完整matrix及显式load_experiment roofline配置，检查模型结构与实测一致、400生成输出数、16形状各20有效重复。纯目标阶段/完整人数筛选后，逐轮实际PredictorItem送estimate，按一次生成的轮次中位数、再20重复中位数对照；排除计数/上下文范围和原始SHA保存。16组等权误差不代表TTFT/ITL或逐token加权误差。compare脚本不使用其配置Scheduler生成batch，batch来自真实vLLM记录。
 
 configs/measure_qwen25_3b.json只改模型结构、速度仍假设100TFLOP/s/1TB/s、系数1/1/开销0，不影响默认。杜机单4090/已有Qwen2.5-3B、50%预算完成硬件矩阵，平均绝对误差54.39%；fit_performed=False。有效chunk配置、eager/同步计时、其他主机任务等限制见第17章，不跨模型/硬件移植误差或系数。
+
+## 同一实测的师兄估算契约
+
+compare_senior_measured.py复用compare_rows筛选/重复汇总，原始文件SHA与现有基线报告绑定；逐组断言相同实测/有效轮次/排除/context范围。replay_requests把实际PredictorItem映射到纯P/D范围，prompt_end保存原输入，context与range随Decode增长；按完整工作量缓存，不按请求ID缓存。官方replay_shape只读native估算，无DES/在线Python状态镜像，不能产生或冒充schema8请求输出。默认解析参数、同一速度假设，未拟合、未改核心配置；来源与范围限制见第17章新增三方表。

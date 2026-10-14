@@ -1,0 +1,437 @@
+{
+  "schema_version": 1,
+  "kind": "senior_analytic_vs_same_hardware_measurements",
+  "run_id": "du-qwen25-3b-eager-matrix-20261014-02",
+  "fit_performed": false,
+  "raw_artifact_sha256": {
+    "metadata.json": "75391d92fbcc767a44667049d84caabb005e35e53e31667819bacf6760ca5829",
+    "capacity.json": "10b17242557db5705a7bbd9eebce75a6c4e62175eec9d81c43098c9a0c860d7c",
+    "batches.jsonl": "92984c1ca2fd3527ba80104e46af3ad25901fd150daa64d8bebcf6d1c508c5c5",
+    "generation_checks.jsonl": "3f096c5b862e99e8e04a9ae3c6e58bbeca496db1f159314eafb6ecb57e689c08",
+    "startup.log": "cdb1e01070cb2aad72c1025276f33d00a4804cbd60c6d2be5146bc20575e6d58",
+    "COMPLETE": "140f17918f9ae9512f3692085c0bb4f48abc31b1f03817b1f4e85c10c35a637c"
+  },
+  "baseline_report_sha256": "3f799182e109d462967ca5138381395abc932631722f56262aadc591572c0a95",
+  "native_binary_sha256": "b5b79be3b1901784839009900d714519979f3530a512110a34a3b8872be85a71",
+  "senior_source_head": "4b7a96be2f5749f861e941dff583c9276f722bbe",
+  "native_matches_source_head": "not_proven",
+  "native_config": {
+    "simulation_name": "lab-qwen25-measured-shape-replay",
+    "seed": 42,
+    "native_thread_count": 1,
+    "model_config": {
+      "model_name": "Qwen2.5-3B-Instruct",
+      "num_layers": 36,
+      "hidden_size": 2048,
+      "intermediate_size": 11008,
+      "num_attention_heads": 16,
+      "num_key_value_heads": 2,
+      "head_dim": 128,
+      "vocab_size": 151936,
+      "dtype": "bfloat16",
+      "kv_cache_dtype": "bfloat16",
+      "tie_word_embeddings": true
+    },
+    "cluster": {
+      "cross_node_bandwidth_bytes_per_s": 50000000000,
+      "nodes": [
+        {
+          "node_id": "node-0",
+          "devices": [
+            {
+              "device_id": "gpu-0",
+              "device_profile_name": "4090-baseline-assumed-100TF-1TB-not-calibrated",
+              "hbm_capacity_bytes": 25757220864,
+              "hbm_bandwidth_bytes_per_s": 1000000000000,
+              "peak_flops_by_dtype": {
+                "bfloat16": 100000000000000
+              },
+              "nvlink_bandwidth_bytes_per_s": 1000000000.0,
+              "pcie_bandwidth_bytes_per_s": 1000000000.0
+            }
+          ]
+        }
+      ]
+    },
+    "services": [
+      {
+        "service_id": "mix-0",
+        "node_id": "node-0",
+        "role": "Mix",
+        "token_budget": 4096,
+        "chunk_size": 256,
+        "device_ids": [
+          "gpu-0"
+        ],
+        "parallel_config": {
+          "tp_size": 1,
+          "pp_size": 1
+        }
+      }
+    ],
+    "router": {
+      "strategy": "round_robin"
+    },
+    "scheduler": {
+      "recipe": "old_policy",
+      "max_batch_size": 32,
+      "max_tokens_per_batch": 4096
+    },
+    "predictor": {
+      "calibration_params": {}
+    },
+    "memory": {
+      "hbm_utilization": 0.9,
+      "fixed_runtime_reserve_bytes": 0,
+      "block_metadata_bytes": 0,
+      "block_alignment_bytes": 1,
+      "hbm_to_dram_batch_timeout_s": 0.0
+    },
+    "kv_cache": {
+      "block_size": 16,
+      "max_blocks_per_worker": 65536,
+      "enable_prefix_cache": false,
+      "resident_kv_mode": "full",
+      "kv_transfer_batch_timeout_s": 0.0
+    },
+    "arrival": {
+      "mode": "use_dataset",
+      "dataset_path": "/mnt/c/Users/yh/Desktop/sim/router-simulator/examples/workloads/native-smoke.jsonl"
+    },
+    "output": {
+      "output_dir": "/mnt/c/Users/yh/Desktop/sim/llm-serving-lab/output/calibration/senior-du-qwen25-comparison-01/unused_session"
+    },
+    "workload": {
+      "cache_dir": "/mnt/c/Users/yh/Desktop/sim/llm-serving-lab/output/calibration/senior-du-qwen25-comparison-01/workload_cache"
+    }
+  },
+  "mode": "immutable_batch_replay_no_des_or_request_latency",
+  "unique_replayed_shapes": 541,
+  "matched_worker_rounds": 6681,
+  "timing_scope_measured": "worker_execute_wall",
+  "shapes": [
+    {
+      "shape_id": "Prefill-B1-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 19.024541601538658,
+      "predicted_median_ms": 7.815399004160013,
+      "relative_error": -0.5891938335308997,
+      "sample_median_min_ms": 18.054939806461334,
+      "sample_median_max_ms": 24.263598024845123,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 7.133373399039999,
+      "lab_relative_error": -0.6250436121697109
+    },
+    {
+      "shape_id": "Prefill-B1-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 23.608396761119366,
+      "predicted_median_ms": 29.426877153279985,
+      "relative_error": 0.24645809078162673,
+      "sample_median_min_ms": 23.148244246840477,
+      "sample_median_max_ms": 24.202531203627586,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 28.804733992960003,
+      "lab_relative_error": 0.22010546859321156
+    },
+    {
+      "shape_id": "Prefill-B1-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 87.07460388541222,
+      "predicted_median_ms": 120.4809664,
+      "relative_error": 0.3836521904658865,
+      "sample_median_min_ms": 86.46491728723049,
+      "sample_median_max_ms": 88.40424939990044,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 119.83883075584001,
+      "lab_relative_error": 0.3762776447831404
+    },
+    {
+      "shape_id": "Prefill-B1-L256",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 19.1224105656147,
+      "predicted_median_ms": 14.977287157760017,
+      "relative_error": -0.21676782817895934,
+      "sample_median_min_ms": 17.72603951394558,
+      "sample_median_max_ms": 19.362039864063263,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 14.3088418816,
+      "lab_relative_error": -0.2517239480607275
+    },
+    {
+      "shape_id": "Prefill-B1-L1024",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 44.33649592101574,
+      "predicted_median_ms": 59.00467426304004,
+      "relative_error": 0.33083756479436843,
+      "sample_median_min_ms": 43.848754838109016,
+      "sample_median_max_ms": 44.40244659781456,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 58.37633880064,
+      "lab_relative_error": 0.31666559541908446
+    },
+    {
+      "shape_id": "Decode-B1-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 16.151594929397106,
+      "predicted_median_ms": 6.181596160000005,
+      "relative_error": -0.6172764245870828,
+      "sample_median_min_ms": 16.078026965260506,
+      "sample_median_max_ms": 16.815008595585823,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 6.176997376,
+      "lab_relative_error": -0.6175611508955438
+    },
+    {
+      "shape_id": "Decode-B1-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 16.123739071190357,
+      "predicted_median_ms": 6.195807232000008,
+      "relative_error": -0.615733844076491,
+      "sample_median_min_ms": 16.078799962997437,
+      "sample_median_max_ms": 16.935737803578377,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 6.191153152,
+      "lab_relative_error": -0.6160224917641929
+    },
+    {
+      "shape_id": "Decode-B1-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 16.141757369041443,
+      "predicted_median_ms": 6.252651520000003,
+      "relative_error": -0.6126412151385652,
+      "sample_median_min_ms": 16.05893298983574,
+      "sample_median_max_ms": 17.231112346053123,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "lab_predicted_median_ms": 6.247776256,
+      "lab_relative_error": -0.6129432432194329
+    },
+    {
+      "shape_id": "Decode-B4-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.269854433834553,
+      "predicted_median_ms": 6.2121654880000055,
+      "relative_error": -0.6402884858236368,
+      "sample_median_min_ms": 17.197098582983017,
+      "sample_median_max_ms": 17.521187663078308,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "lab_predicted_median_ms": 6.193770495999999,
+      "lab_relative_error": -0.6413536362028993
+    },
+    {
+      "shape_id": "Decode-B4-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.242762725800276,
+      "predicted_median_ms": 6.269009776000001,
+      "relative_error": -0.6364266054290879,
+      "sample_median_min_ms": 17.16336142271757,
+      "sample_median_max_ms": 17.826275900006294,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "lab_predicted_median_ms": 6.2503936,
+      "lab_relative_error": -0.6375062570079004
+    },
+    {
+      "shape_id": "Decode-B4-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 580,
+      "measured_median_ms": 17.25226826965809,
+      "predicted_median_ms": 6.496386928000007,
+      "relative_error": -0.6234473736172226,
+      "sample_median_min_ms": 17.165152356028557,
+      "sample_median_max_ms": 17.389731481671333,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 170,
+        "mixed_or_other_phase": 60,
+        "partial_batch": 40
+      },
+      "lab_predicted_median_ms": 6.476886016,
+      "lab_relative_error": -0.6245777126367187
+    },
+    {
+      "shape_id": "Decode-B8-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.276971600949764,
+      "predicted_median_ms": 6.25289992,
+      "relative_error": -0.6380789374188552,
+      "sample_median_min_ms": 17.207578755915165,
+      "sample_median_max_ms": 17.613952979445457,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "lab_predicted_median_ms": 6.21611008,
+      "lab_relative_error": -0.6402083522752169
+    },
+    {
+      "shape_id": "Decode-B8-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.321044113487005,
+      "predicted_median_ms": 6.366588496000004,
+      "relative_error": -0.6324362172230328,
+      "sample_median_min_ms": 17.249442636966705,
+      "sample_median_max_ms": 18.24970543384552,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "lab_predicted_median_ms": 6.329356288,
+      "lab_relative_error": -0.6345857532299883
+    },
+    {
+      "shape_id": "Decode-B8-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 540,
+      "measured_median_ms": 17.33055617660284,
+      "predicted_median_ms": 6.821342800000005,
+      "relative_error": -0.6063979291553738,
+      "sample_median_min_ms": 17.279695719480515,
+      "sample_median_max_ms": 17.765747383236885,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 180,
+        "mixed_or_other_phase": 100,
+        "partial_batch": 80
+      },
+      "lab_predicted_median_ms": 6.78234112,
+      "lab_relative_error": -0.6086483866480572
+    },
+    {
+      "shape_id": "Decode-B2-L256",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.245473340153694,
+      "predicted_median_ms": 6.201272320000006,
+      "relative_error": -0.6404115910485795,
+      "sample_median_min_ms": 17.182658426463604,
+      "sample_median_max_ms": 17.92153436690569,
+      "context_min": 256,
+      "context_max": 286,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "lab_predicted_median_ms": 6.192037888,
+      "lab_relative_error": -0.6409470609552539
+    },
+    {
+      "shape_id": "Decode-B2-L1024",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 601,
+      "measured_median_ms": 17.270507290959358,
+      "predicted_median_ms": 6.258116608000007,
+      "relative_error": -0.6376414136210138,
+      "sample_median_min_ms": 17.177820205688477,
+      "sample_median_max_ms": 17.33958348631859,
+      "context_min": 1024,
+      "context_max": 1054,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 39,
+        "partial_batch": 19
+      },
+      "lab_predicted_median_ms": 6.2486609920000005,
+      "lab_relative_error": -0.6381889143886929
+    }
+  ],
+  "senior_mean_absolute_shape_error": 0.5417305965556676,
+  "senior_max_absolute_shape_error": 0.6404115910485795,
+  "lab_mean_absolute_shape_error": 0.5438974517656108
+}

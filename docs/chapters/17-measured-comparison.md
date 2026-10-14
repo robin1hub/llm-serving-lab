@@ -87,3 +87,44 @@ python3 calibration/scripts/compare_measured.py \
 ```
 
 比较输出目录必须全新。脚本拒绝缺COMPLETE、模型结构不符、输出长度错误、缺形状或不足20次有效重复的记录。6个采集专项测试通过，覆盖实际context、等权重复、过滤及非法耗时；基线配置CLI成功运行。用户学习理解进度尚未确认，本步只完成测量与原始误差对照。
+
+## 6. 同一实测的师兄预测：三方对照（2026-10-14）
+
+用户要求师兄预测这份实测数据。新增compare_senior_measured.py，只读使用师兄已有native二进制，调用官方replay_shape执行估算接口，没有重新采硬件、没有运行到达/调度事件，也没有拟合参数。先核对原始文件SHA，再复用compare_rows，所以实测值、有效重复、轮次数、排除条件和上下文范围逐组完全一致。
+
+两边统一Qwen2.5-3B结构、BF16/TP1、假设100TFLOP/s与1TB/s。师兄calibration_params为空，即当前默认解析参数；不移用其他设备/模型的经验系数。原输入长度prompt_end与增长的context分开传：如输入128、当前context145，则Decode范围145–146、prompt_end仍128、logits1。6681个有效轮次对应541个不同工作量形状；相同形状复用预测，缓存不包含请求ID，但包含每个成员上下文/阶段/范围/logits/原输入长度。
+
+| 工作量 | 实测ms | 我们预测ms | 师兄预测ms | 师兄相对误差 |
+| --- | ---: | ---: | ---: | ---: |
+| Prefill B1 / 128 | 19.025 | 7.133 | 7.815 | −58.92% |
+| Prefill B1 / 256 | 19.122 | 14.309 | 14.977 | −21.68% |
+| Prefill B1 / 512 | 23.608 | 28.805 | 29.427 | +24.65% |
+| Prefill B1 / 1024 | 44.336 | 58.376 | 59.005 | +33.08% |
+| Prefill B1 / 2048 | 87.075 | 119.839 | 120.481 | +38.37% |
+| Decode B1 / C128 | 16.152 | 6.177 | 6.182 | −61.73% |
+| Decode B1 / C512 | 16.124 | 6.191 | 6.196 | −61.57% |
+| Decode B1 / C2048 | 16.142 | 6.248 | 6.253 | −61.26% |
+| Decode B4 / C128 | 17.270 | 6.194 | 6.212 | −64.03% |
+| Decode B4 / C512 | 17.243 | 6.250 | 6.269 | −63.64% |
+| Decode B4 / C2048 | 17.252 | 6.477 | 6.496 | −62.34% |
+| Decode B8 / C128 | 17.277 | 6.216 | 6.253 | −63.81% |
+| Decode B8 / C512 | 17.321 | 6.329 | 6.367 | −63.24% |
+| Decode B8 / C2048 | 17.331 | 6.782 | 6.821 | −60.64% |
+| Decode B2 / C256 | 17.245 | 6.192 | 6.201 | −64.04% |
+| Decode B2 / C1024 | 17.271 | 6.249 | 6.258 | −63.76% |
+
+师兄16组等权平均绝对相对误差54.17%、最大64.04%；我们为54.39%、64.14%。在这组相同假设条件下两边都明显偏离实测，之前的“模拟器间对齐”不能替代硬件校准。这里的结论仅针对这套默认解析配置，不能说师兄所有已校准配置都有同样误差，也没有验证其整体调度模拟精度。
+
+调用路径：实测items → replay_requests范围适配 → IterationShape/replay_shape → Native CalibrationReplayResult.duration_s → ms → 同一compare_rows。纯batch接口不接受Mixed；此前的50ms调度等待不会进入这次执行耗时对照。测量边界仍是Worker同步eager，Predictor的执行成本近似与它之间是否缺少CPU/调用开销等因素仍待独立分析。
+
+本次不产生完整DES的schema8 manifest/events；只输出离线估算比较JSON/逐轮JSONL，不能冒充请求级模拟结果。来源记录二进制SHA、源码HEAD、配置、原始数据及原基线摘要SHA。已有二进制SHA仍b5b79be3…，与第16章同一文件（当时native报告commit3b374848…），当前HEAD4b7a96be…，不声称已运行最新源码构建。没有修改/重编译师兄仓库、环境或默认配置。
+
+摘要提交calibration/measurements/senior-du-qwen25-3b-20261014.json；原始离线输出在output/calibration/senior-du-qwen25-comparison-01。新增适配/缓存测试，8个采集专项测试通过；实际调用完成且逐组口径核对一致。
+
+```bash
+../router-simulator/.venv/bin/python -S -B calibration/scripts/compare_senior_measured.py \
+  --senior-root ../router-simulator \
+  --run output/calibration/du-qwen25-3b-eager-matrix-20261014-02 \
+  --baseline calibration/measurements/du-qwen25-3b-matrix-20261014.json \
+  --output output/calibration/senior-du-qwen25-comparison-new
+```

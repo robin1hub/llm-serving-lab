@@ -9,6 +9,8 @@ import unittest
 from calibration.scripts.batch_records import describe_work, select_device
 from calibration.scripts.summarize_smoke import summarize
 from calibration.scripts.compare_measured import compare_rows
+from calibration.scripts.compare_senior_measured import SeniorReplayPredictor, replay_requests
+from simulator.predictor import PredictorItem
 
 
 def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
@@ -19,6 +21,30 @@ def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
 
 
 class CalibrationRecordTests(unittest.TestCase):
+    def test_senior_adapter_keeps_original_prompt_end_and_growing_context(self):
+        item = PredictorItem("A", "Decode", 1, 145, True)
+        rows = replay_requests((item,), {"A": 128})
+        self.assertEqual((rows[0]["prompt_end"], rows[0]["context_length"],
+                          rows[0]["range_start"], rows[0]["range_end"], rows[0]["logits_token_count"]),
+                         (128, 145, 145, 146, 1))
+        with self.assertRaises(ValueError):
+            replay_requests((item, PredictorItem("B", "Prefill", 2, 0, True)), {"A": 128, "B": 2})
+
+    def test_senior_cache_ignores_identity_but_not_workload(self):
+        calls = []
+
+        def replay(rows):
+            calls.append(rows)
+            return rows[0]["context_length"] / 10
+
+        predictor = SeniorReplayPredictor({"A": 128, "B": 128}, replay)
+        a = predictor.estimate((PredictorItem("A", "Decode", 1, 145, True),))
+        b = predictor.estimate((PredictorItem("B", "Decode", 1, 145, True),))
+        c = predictor.estimate((PredictorItem("B", "Decode", 1, 146, True),))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((a.duration_ms, b.duration_ms, c.duration_ms), (14.5, 14.5, 14.6))
+        self.assertEqual(b.items[0].request_id, "B")
+
     def test_comparison_uses_actual_context_and_equal_repetition_weight(self):
         class ContextPredictor:
             def estimate(self, items):
