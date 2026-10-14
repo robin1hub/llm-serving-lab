@@ -6,7 +6,7 @@
 
 启动前三次检查（间隔3秒），GPU0–3各2441MiB、利用率0%；GPU4/5在使用。选择GPU0，显式允许已有显存不超过3072MiB，仍要求启动检查时利用率0。利用率0不保证其他任务一直不计算；没有清理显存或终止他人进程。
 
-显存预算从默认90%改为80%，约19.2GiB，给已有占用及余量留空间。其他条件：max_model_len4096、max_num_seqs8、max_num_batched_tokens4096、block16，禁用prefix caching/chunked prefill/CUDA Graph。独立环境和缓存仍在/data/llm-serving-lab-calibration。
+显存预算从默认90%改为80%，约19.2GiB，给已有占用及余量留空间。其他条件：max_model_len4096、max_num_seqs8、max_num_batched_tokens4096、block16，请求禁用prefix caching/chunked prefill/CUDA Graph。2026-10-14复查日志确认V1实际启用了chunked prefill，之前把请求值当有效值不准确；本次小smoke按实际工作量记录，结果仍保留。独立环境和缓存仍在/data/llm-serving-lab-calibration。
 
 ```mermaid
 flowchart LR

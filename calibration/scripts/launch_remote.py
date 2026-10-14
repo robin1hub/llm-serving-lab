@@ -13,6 +13,7 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--gpu-uuid", default="GPU-0f409808-9870-2765-3a7c-540b7d06c6c7")
+    parser.add_argument("--model", type=Path, default=Path("/data/HF_MODELS/Qwen3-8B"))
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     parser.add_argument("--max-existing-memory-mib", type=int, default=64)
     args = parser.parse_args()
@@ -23,7 +24,7 @@ def main() -> int:
     if out.exists():
         raise ValueError("输出目录已存在")
     command = [str(root / "venv/bin/python"), str(root / "collect_batches.py"),
-               "--model", "/data/HF_MODELS/Qwen3-8B", "--output", str(out),
+               "--model", str(args.model), "--output", str(out),
                "--gpu-uuid", args.gpu_uuid,
                "--gpu-memory-utilization", str(args.gpu_memory_utilization),
                "--max-existing-memory-mib", str(args.max_existing_memory_mib)]

@@ -23,6 +23,11 @@ class TimedWorker(Worker):
             "reported_kv_token_capacity": config.num_gpu_blocks * config.block_size,
             "reported_kv_budget_bytes": self.available_kv_cache_memory_bytes,
             "weight_vram_bytes": int(self.model_runner.model_memory_usage),
+            "effective_engine": {
+                "enable_chunked_prefill": self.vllm_config.scheduler_config.enable_chunked_prefill,
+                "enable_prefix_caching": config.enable_prefix_caching,
+                "gpu_memory_utilization": config.gpu_memory_utilization,
+            },
         }
 
     def drain_calibration_rows(self) -> list[dict]:

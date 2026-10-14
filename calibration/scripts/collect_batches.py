@@ -69,6 +69,9 @@ def main() -> None:
     (args.output / "metadata.json").write_text(json.dumps(metadata, indent=2))
     llm = LLM(**settings)
     capacity = llm.collective_rpc("calibration_capacity")[0]
+    # 实际引擎可能覆盖请求参数，特别是V1的chunked prefill；两者分别记录。
+    metadata["effective_engine"] = capacity["effective_engine"]
+    (args.output / "metadata.json").write_text(json.dumps(metadata, indent=2))
     capacity.update(schema_version=1, record_status="measured", run_id=args.output.name,
                     capacity_source="TimedWorker reads initialized cache_config",
                     source_artifact="startup.log")

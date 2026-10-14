@@ -8,6 +8,7 @@ import unittest
 
 from calibration.scripts.batch_records import describe_work, select_device
 from calibration.scripts.summarize_smoke import summarize
+from calibration.scripts.compare_measured import compare_rows
 
 
 def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
@@ -18,6 +19,33 @@ def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
 
 
 class CalibrationRecordTests(unittest.TestCase):
+    def test_comparison_uses_actual_context_and_equal_repetition_weight(self):
+        class ContextPredictor:
+            def estimate(self, items):
+                return NS(duration_ms=sum(item.context_tokens for item in items))
+
+        def row(sample, context, measured, phase="Decode", warmup=False, count=1):
+            return {"shape_id": "Decode-B1-L128", "sample_id": sample, "iteration_index": context,
+                    "record_status": "measured", "timing_scope": "worker_execute_wall",
+                    "duration_ms": measured, "preemptions": 0, "is_warmup": warmup,
+                    "target_phase": "Decode", "split": "fit", "actual_batch_requests": count,
+                    "items": [{"request_id": str(i), "phase": phase, "new_tokens": 1,
+                               "context_tokens": context, "produces_token": True} for i in range(count)]}
+
+        # 第二次生成的轮次多，也只占一次重复的权重；context没有用名称L128覆盖。
+        data = [row("a", 10, 10), row("b", 20, 20), row("b", 20, 20), row("b", 20, 20),
+                row("warm", 99, 99, warmup=True), row("input", 1, 99, phase="Prefill"),
+                row("unexpected", 10, 99, count=2)]
+        summary, details = compare_rows(data, ContextPredictor())
+        self.assertEqual(summary[0]["repetitions"], 2)
+        self.assertEqual(summary[0]["worker_rounds"], 4)
+        self.assertEqual(summary[0]["measured_median_ms"], 15)
+        self.assertEqual(summary[0]["predicted_median_ms"], 15)
+        self.assertEqual([r["predicted_ms"] for r in details], [10, 20, 20, 20])
+        self.assertEqual(summary[0]["excluded"], {"warmup": 1, "mixed_or_other_phase": 1, "partial_batch": 1})
+        with self.assertRaises(ValueError):
+            compare_rows([row("a", 10, float("nan"))], ContextPredictor())
+
     def test_uuid_maps_to_physical_index_and_rejects_busy(self):
         data = "3, GPU-B, 2441 MiB, 0 %\n7, GPU-A, 1 MiB, 0 %"
         self.assertEqual(select_device(data, "GPU-A"), 7)

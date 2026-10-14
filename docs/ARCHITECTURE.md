@@ -167,3 +167,11 @@ configs/reference_senior.json是显式可选参照系数，设备速度假设100
 select_device新增显式max_existing_memory_mib阈值，默认64；共享试跑用3072且仍要求利用率0。collect_batches/launch_remote显式传显存使用比例，默认0.9不变，本次0.8，metadata保存shared_gpu_trial及阈值。授权只表示允许共享试跑，利用率0不构成独占保证。
 
 TimedWorker在Qwen3-8B/vLLM0.11.0真实smoke已运行成功，读取实际1412块/16token和Worker计时。summarize_smoke只接受完整两形状试跑，过滤预热与Decode样本中的输入Prefill，提交摘要和证据SHA；不改运行时、Predictor来源或默认容量profile。完整拟合/验证仍未执行，不能用少量共享smoke发布可靠性能profile。
+
+## 第17章：已有模型的完整实测对照
+
+launch_remote支持显式--model，独立采集器不绑定Qwen3名称。Worker容量RPC返回effective_engine，metadata将请求/实际参数分开；V1实际chunk=True，即使请求False。旧王机smoke的请求参数不能当有效参数。核心事件模拟器仍无外部依赖或执行语义变化。
+
+compare_measured.py读取完整matrix及显式load_experiment roofline配置，检查模型结构与实测一致、400生成输出数、16形状各20有效重复。纯目标阶段/完整人数筛选后，逐轮实际PredictorItem送estimate，按一次生成的轮次中位数、再20重复中位数对照；排除计数/上下文范围和原始SHA保存。16组等权误差不代表TTFT/ITL或逐token加权误差。compare脚本不使用其配置Scheduler生成batch，batch来自真实vLLM记录。
+
+configs/measure_qwen25_3b.json只改模型结构、速度仍假设100TFLOP/s/1TB/s、系数1/1/开销0，不影响默认。杜机单4090/已有Qwen2.5-3B、50%预算完成硬件矩阵，平均绝对误差54.39%；fit_performed=False。有效chunk配置、eager/同步计时、其他主机任务等限制见第17章，不跨模型/硬件移植误差或系数。

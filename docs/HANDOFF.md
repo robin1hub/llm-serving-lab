@@ -1,12 +1,12 @@
 # 项目交接：当前状态
 
-更新时间：2026-10-13（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
+更新时间：2026-10-14（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第16章16-reference-comparison.md（本地参照）/第15章（真实采集）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第17章17-measured-comparison.md（最新硬件对照）/第15章（真实采集）/第16章（参照）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
-用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意进入校准准备，尚未实际测量，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
+用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，尚未正式拟合，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
 ## 当前已实现
 
@@ -22,7 +22,7 @@ AGENTS.md → 本页 → ARCHITECTURE.md → 第16章16-reference-comparison.md�
 
 ## 当前验证与例子
 
-最新72测试中70通过，2个分词集成因系统Python缺依赖跳过；新增3个采集记录/设备映射测试。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，本步结果output/sharegpt_recovery_regression.json与output/sharegpt_kv_regression.json对照。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
+此前72测试中70通过，2个分词集成因系统Python缺依赖跳过；新增3个采集记录/设备映射测试。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，本步结果output/sharegpt_recovery_regression.json与output/sharegpt_kv_regression.json对照。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -36,7 +36,7 @@ python3 run_simulation.py --config configs/kv_blocked.json --output output/kv_bl
 
 ## 尚未实现
 
-多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、实际容量实测验证、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、真实模型/4090测量和拟合。引用/GPU字段是实际结构，不等于这些机制已启用。当前一池最多一在途事务。
+多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、实际容量实测验证、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、其他模型/硬件实测、正式4090耗时拟合。引用/GPU字段是实际结构，不等于这些机制已启用。当前一池最多一在途事务。
 
 ## 本地环境
 
@@ -111,3 +111,17 @@ run_id=wang-qwen3-8b-eager-shared-smoke-20261013-03，成功加载Qwen3-8B、完
 原始数据已取回ignored output/calibration/<run_id>，远端runs同目录保留；提交的calibration/measurements/wang-shared-smoke-20261013.json只有摘要/条件/原始证据SHA。新增summarize_smoke.py核对COMPLETE、measured、实际人数/阶段、输出数和预热排除，不拟合；5个采集专项测试通过。基础模拟器/默认Predictor/容量profile不变。
 
 最新讲解calibration/wang-shared-smoke.md及第15章入口；第16章的参照实测限制只描述当时参照实验。当前已取得少量硬件smoke数据且TimedWorker真实运行通过，不能沿用“无真实数据/计时未验证”的旧状态。尚未完整fit/validation矩阵、共享干扰监测、请求级校准或发布硬件profile；样本少，系数仍未校准。下一步讨论是否扩展完整矩阵，用户尚未确认理解这轮结果。
+
+## 最新：换已有模型，杜机完整矩阵与原始误差完成（2026-10-14）
+
+用户授权“跑一下看看实测和模拟误差”，随后提出A6000或杜机，最终要求用已有权重免下载。只读核对A6000：4×RTX A6000/49140MiB，卡1/2约6/4MiB且0%；已有完整Qwen3-8B、Qwen2.5-3B。杜机：GPU4为4MiB/0%，有完整Qwen2.5-3B-Instruct两分片，Qwen3-8B仍缺全部分片。按索引/safetensors头数据范围核对，不是全内容SHA。选择杜机GPU4+已有3B及此前独立vLLM0.11.0/torch2.8.0环境，没有权重/环境下载，A6000无修改/运行。
+
+launch_remote新增--model，其他默认不变。du-qwen25-3b-eager-matrix-20261014-01以90%预算在Prefill2048遇OOM，无COMPLETE，不用于统计。第二次-02用50%预算成功，400次生成、9224条Worker记录、16形状每组5warmup/20实测；退出0/GPU4回4MiB，原始完整文件已取回ignored output/calibration/<run_id>，远端runs保留。vLLM权重VRAM6218668032bytes，KV6028470272bytes，10220块×16=163520token。其他卡/服务器仍忙，不承诺主机独占。
+
+发现请求enable_chunked_prefill=false被V1改成true，新增Worker/metadata.effective_engine，实际prefix=False、chunk=True、利用率预算0.5。王机旧smoke日志也显示chunk=True，旧“禁用分块”表述已纠正，旧原始metadata.engine只是请求值，不改写旧原始数据。有效参数必须以实际读值/日志为准。
+
+新configs/measure_qwen25_3b.json为未调参基线：3B结构36层/H2048/I11008/16头/2KV头/V151936，沿用假设100TFLOP/s/1TB/s与系数1/1/开销0。不是4090有效速度实测，也未套用师兄参照拟合系数。compare_measured.py检查完成、模型身份/输出数量/16形状20有效重复；逐轮按actual items预测，排除预热、其他/混合阶段、人数不完整轮次，按每次生成先取中位再按20次重复取中位，避免31轮D伪装31次独立重复。计时仍Worker同步eager，非TTFT。
+
+16组等权平均绝对相对误差54.39%、最大64.14%。P128实测19.0245ms/预测7.1334（-62.50%）；P512 23.6084/28.8047（+22.01%）；P2048 87.0746/119.8388（+37.63%）；D B1/C128 16.1516/6.1770（-61.76%）。D实际context随生成到C+30，完整轮次人数/上下文均匹配。短P和D偏快、长P偏慢；固定开销/有效速度等只是待检验解释，不称已证明。
+
+摘要已提交calibration/measurements/du-qwen25-3b-matrix-20261014.json，16组表/流程图/结构/统计和代码映射在第17章。fit_performed=False，未发布硬件校准profile，基础Engine/Predictor/default配置不变。6个采集专项测试通过，新基线CLI运行成功。用户尚未确认理解这轮结果；下一步讨论误差，再用原fit/validation划分拟合验证，不自动扩展Mixed/多卡或宣称请求级校准完成。
