@@ -45,6 +45,8 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 
 研究入口：[D侧高压力调度论文与实验线索](docs/READING.md)，区分准入、D路由、迁移和资源配置；运行实现仍按ROADMAP推进。
 
+跨session研究交接：[D-heavy研究报告](docs/D_HEAVY_RESEARCH_BRIEF.md)，汇总D→P的请求/目标/数量决策、零阶优化方法、实现缺口与分阶段实验；末尾包含可直接复制的下一session任务。
+
 1. [请求与排队](docs/chapters/01-requests.md)：Prefill、Decode、等待和延迟。
 2. [Batch 与优先级](docs/chapters/02-batching.md)：组批、动态进出和等待取舍。
 3. [事件队列](docs/chapters/03-events.md)：到达、唤醒、完成。
