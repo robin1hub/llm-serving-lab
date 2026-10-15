@@ -1,0 +1,19 @@
+{
+  "workload": {"path": "../workloads/two_mix_requests.json"},
+  "timing": {"prefill_ms_per_input_token": 2, "decode_ms_per_step": 2},
+  "scheduler_profiles": {
+    "mix_default": {
+      "prefill_algorithm": "fcfs_chunked",
+      "decode_algorithm": "round_robin",
+      "mix_algorithm": "prefill_first",
+      "constraints": {"max_batch_requests": 2, "max_tokens_per_batch": 4, "prefill_chunk_tokens": 4}
+    }
+  },
+  "workers": [
+    {"id": "worker_0", "gpu_id": "gpu_0", "role": "Mix", "scheduler_profile": "mix_default",
+     "kv_cache": {"gpu_id": "gpu_0", "total_blocks": 4, "block_tokens": 2}},
+    {"id": "worker_1", "gpu_id": "gpu_1", "role": "Mix", "scheduler_profile": "mix_default",
+     "kv_cache": {"gpu_id": "gpu_1", "total_blocks": 4, "block_tokens": 2}}
+  ],
+  "routing": {"policy": "fixed", "assignments": {"A": "worker_0", "B": "worker_1"}}
+}

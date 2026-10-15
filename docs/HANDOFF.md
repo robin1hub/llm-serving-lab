@@ -2,18 +2,18 @@
 
 更新时间：2026-10-15（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
 
-最新结果：A6000直接测试已完成。第20章和本页末尾是当前进度；下方旧阶段关于“尚未拟合/无新GPU结果/采集器仅草稿”的说明已被后续记录取代。
+最新结果：多卡路线第1阶段已实现，支持多个独立Mix worker、共享事件堆和固定请求归属；第21章、ROADMAP与本页末尾为当前进度。A6000限定范围校准仍保留第20章。下方历史阶段关于“单卡限定/尚未拟合/无新GPU结果/采集器仅草稿”的说明已由后续记录取代。
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第20章20-a6000-mixed.md（A6000直接测试）/第19章（旧混合分析/停止拷贝）/第18章（拟合/验证）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → ROADMAP.md → 第21章21-multi-workers.md → 对应代码和测试。校准背景见第18–20章。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
 用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，已完成限定范围拟合和新形状验证，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
 ## 当前已实现
 
-- 单卡到达/完成/唤醒事件，busy阻止重叠；候选快照/计划冻结，Scheduler只读选批。
-- 独立scheduler_profiles算法槽与worker按名字引用；旧policy兼容，禁止混用。P/D方案可定义校验，但完整运行只支持一个Mix worker。
+- 共享到达/完成/唤醒事件堆，按worker_id分发；每卡busy阻止本卡重叠，不同卡可并行；候选快照/计划冻结，Scheduler只读选批。
+- 独立scheduler_profiles算法槽与worker按名字引用；旧policy兼容，禁止混用。支持多个完整Mix worker，P/D方案可定义校验，但完整P/D运行仍等待交接机制。多卡用显式固定routing，逐卡资源独立。
 - Prefill FCFS分块、Decode轮转；人数/token/chunk限制正整数或null。Mix支持严格P优先、严格D优先、alternating和mixed_decode_first，后者先D、剩预算最多一个P块。
 - 内核按成员阶段提交/完成，整批同一完成时刻；中间P块无输出，最终块产首token；只轮转Decode成员。
 - 独立Predictor：默认teaching保持旧公式，Mixed为P线性耗时加一次D轮时间；可选未校准roofline，两组max计算/访存后相加与开销。模型/算力/带宽/系数可配，结果保存明细。Decode上下文为input+generated-1，无未来输出目标输入。
@@ -24,7 +24,7 @@ AGENTS.md → 本页 → ARCHITECTURE.md → 第20章20-a6000-mixed.md（A6000�
 
 ## 当前验证与例子
 
-此前72测试中70通过，2个分词集成因系统Python缺依赖跳过；新增3个采集记录/设备映射测试。禁用KV时默认ShareGPT requests/steps/summary/estimates逐项不变，本步结果output/sharegpt_recovery_regression.json与output/sharegpt_kv_regression.json对照。test_kv_cache核对身份/生命周期/历史冻结、保护、页边界/尾部浪费、原子失败与回滚、混合缩块、Decode回退、阻塞JSON和退出码、禁用/大容量兼容。
+最新93测试中91通过、2个分词集成因系统Python缺依赖跳过；9个新增多卡测试守住并发/同刻顺序/独立资源/阻塞/恢复/配置/CLI。基础、KV和重算三个旧CLI完整JSON与改动前逐项相同，保存在output/multi-worker-before及output/multi-worker-after-*.json。更早ShareGPT禁用KV回归结果仍保留；test_kv_cache继续验证身份/生命周期/冻结、页边界、容量回滚、回退和blocked导出。
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -38,7 +38,7 @@ python3 run_simulation.py --config configs/kv_blocked.json --output output/kv_bl
 
 ## 尚未实现
 
-多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、模拟容量公式与实测池大小的系统对齐、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、跨模型/硬件泛化精度验证。已经有4090与A6000限定范围耗时拟合及实际KV池记录，不代表全部校准完成。引用/GPU字段不等于扩展机制已启用，当前一池最多一在途事务。
+P→D交接/传输、动态路由、共享KV引用接口、写时复制、传输保护/跨卡副本、模拟容量公式与实测池大小的系统对齐、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、TP/PP和跨模型/硬件泛化精度验证。已经有多个独立Mix worker与4090/A6000限定范围耗时拟合，不代表完整分布式系统或全部校准完成。当前每个独立池最多一在途事务。
 
 ## 本地环境
 
@@ -181,3 +181,21 @@ analyze_mixed.py读取实际items一次estimate，非P时间+D时间相加；保
 摘要calibration/measurements/a6000-qwen25-{baseline,fit,controlled-mixed}-20261015.json，完整证据本地ignored output/calibration/<run_id>/及远端runs同名目录。两次正式采集退出0/COMPLETE，GPU2恢复4MiB/0%，无残留推理/模型传输。uv缓存保留在项目内，安装后/data余量约48GiB；不清理其他人的文件。collect_mixed正式公开，launcher新增--mixed；fit_timing只增加device-label/scope来源参数，原拟合公式/默认参数兼容；analyze_mixed补GPU身份/矩阵/目标轮验收。15个采集专项测试通过，配置加载及diff检查通过。第20章有流程/时序、数据结构、重点代码、全部9组表和复现入口。默认模拟器及核心公式不改。
 
 当前用户步骤已完成，下一步先讨论结果：若继续可测更长D上下文或请求级混合调度对照，而不是自动启动更多测试/重新拟合。用户是否理解本次结果尚未确认。两份取消Wang试验的8B配置仍为原有未提交草稿，不混入提交。
+
+## 最新：多卡路线第1阶段完成（2026-10-15）
+
+用户同意进入多卡调度学习，要求先把五阶段计划写文档，再实现第1阶段，并持续维护详细讲解。已先创建docs/ROADMAP.md：独立多Mix → 固定1P1D/传输 → 交接容量协议 → 可配置路由对比 → D压力调度。当前只完成第1阶段，用户理解尚未确认，不自动推进第2阶段。
+
+新增simulator/worker.py的不可变WorkerConfig（worker_id/gpu_id/role、方案、timing/PredictorSettings、KV/recovery及容量来源）。engine.py将原闭包状态归入_WorkerRuntime：每卡waiting/active、busy/wakeup_pending、请求进度和输出记录、Scheduler/Predictor/BlockPool/RecoveryController独立。_ScheduledEvent增加worker_id；_drive_workers只有一个future/sequence，按time、arrival0/complete1/wakeup2、稳定序号排序，分发到目标卡。不同卡执行区间允许重叠，每卡仍独占执行。单卡simulate_events复用同一内核，返回原EventRun，保留旧trace/JSON语义。
+
+load_experiment支持workers多条，字段id/gpu_id/role/scheduler_profile，多卡gpu_id必填且唯一、id唯一，当前完整运行只接受Mix。每卡可覆盖timing/predictor/kv_cache/recovery；公共耗时作为默认，子级来源整体替换父级互斥来源。多卡禁止顶层KV/recovery以免误用共享池，各卡KV.gpu_id需匹配，未设置KV即未启用容量准入。复用旧单卡解析校验并只读取一次负载；Experiment旧单卡字段保留为首卡兼容视图，多卡调用必须用workers与assignments。
+
+多卡必填routing={policy:fixed, assignments:{请求ID:workerID}}，恰好覆盖所有请求，无未知worker；单卡省略则全部归唯一worker。不读未来输出长度做路由，不做负载均衡或迁移。simulate_workers返回ClusterRun/WorkerRun，steps为带worker_id/gpu_id的WorkerStep；全局启动顺序保证steps/plans/estimates同序。某卡容量阻塞只退出本卡dispatch，继续处理其他卡，堆耗尽后才汇总blocked/pending。
+
+run_simulation.py单卡仍schema1且内容保持，多卡schema2：全局summary/requests/steps/plans/estimates/trace/routing，workers分别保存配置、KV/恢复、局部summary与busy_time_ms。全局吞吐窗口不是每卡时长之和，不能相加局部吞吐；blocked仅统计已完成请求并保存未完成进度、退出2。跨卡KV快照不合并。
+
+新增configs/two_mix_workers.json与workloads/two_mix_requests.json。两卡均教学P每token2ms、D每轮2ms，各4块×2token；A到达0、输入4输出3归卡0，输出8/10/12ms；B到达0、输入2输出2归卡1，输出4/6ms。全局窗口12ms、2请求/5输出、166.67req/s；默认未校准逻辑例子，真实GPU和共享CPU/链路争用未模拟。运行python3 run_simulation.py --config configs/two_mix_workers.json --output output/two_mix_workers.json。只把B改给卡0时卡1保持空闲，卡0容量约束使B等待：A输出8/14/16，B12/18；文档解释原因。
+
+验证：93项测试中91通过、2项分词依赖缺失跳过，新增tests/test_multi_worker.py九项，覆盖并发/单卡互斥、同刻全局事件顺序、独立KV与恢复/交替状态、不同速度、空负载/空闲卡、固定归属、错误配置、schema2与blocked CLI。改动前后basic/kv_blocks/recompute三个CLI完整JSON逐项一致，ignored output/multi-worker-before/*.json及output/multi-worker-after-*.json保留证据。所有真实采集器/校准profile和默认示例未更改。
+
+学习入口第21章：结果手算、全局/每卡状态表、事件流程图、配置继承与拒绝规则、KV阻塞、输出schema、五处代码阅读顺序和两个练习。README/ARCHITECTURE/ROADMAP/LEARNING_LOG同步。核心阅读标记worker.py重点1、engine运行现场重点2/驱动器重点3、config重点4；不必一次读完dispatch的KV/恢复分支。两份原有8B草稿仍未提交，未修改师兄项目、服务器环境或全局依赖。

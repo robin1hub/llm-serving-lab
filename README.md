@@ -1,6 +1,6 @@
 # LLM Serving 学习实验
 
-通过小步实验学习请求、batch、事件与调度。当前只保留单卡事件模拟器，耗时仍为教学假设。
+通过小步实验学习请求、batch、事件与调度。当前支持单卡与多个独立Mix worker的事件模拟；默认耗时为教学假设，限定范围的实测参数需显式选择。
 
 ## 当前目录
 
@@ -14,6 +14,7 @@ simulator/             models.py 数据结构、config.py 配置、engine.py 事
                        kv_cache.py KV块身份、请求表、准入与生命周期
                        memory_budget.py 显存字节预算换算KV块数
                        recovery.py 受害者选择、暂停与重算恢复状态
+                       worker.py 每张逻辑卡的不可变配置
 calibration/           校准方案、采集入口、参照与硬件实测摘要
 configs/               实验配置
 workloads/             请求数据
@@ -32,6 +33,7 @@ workloads/             请求数据
 cd /mnt/c/Users/yh/Desktop/sim/llm-serving-lab
 python3 run_simulation.py --config configs/basic.json
 python3 run_simulation.py --config configs/decode_first.json --output output/decode.json
+python3 run_simulation.py --config configs/two_mix_workers.json --output output/two_mix_workers.json
 python3 -m unittest discover -s tests -q
 ```
 
@@ -61,7 +63,10 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 18. [拟合与新形状验证](docs/chapters/18-calibration-validation.md)：冻结参数、半数新形状、适用范围。
 19. [混合轮次验证](docs/chapters/19-mixed-validation.md)：已有219混合轮次、实际组成、验证限制。
 20. [A6000受控混合验证](docs/chapters/20-a6000-mixed.md)：换硬件后的独立纯P/D拟合、1P+多D实验与验收。
+21. [多worker事件模拟](docs/chapters/21-multi-workers.md)：两张Mix卡并行、独立状态、共享事件堆与固定归属。
 
-现在主要阅读[第20章：A6000受控混合验证](docs/chapters/20-a6000-mixed.md)。直接使用A6000本地Qwen2.5-3B基础版，独立纯P/D拟合后冻结参数，9组1P+1/3/7D共180个目标轮的平均误差28.80%→5.64%，最大10.35%；未用混合数据调参。纯P/D的4组留出平均8.08%，P256仍高估21.40%。GPU已释放，没有拷贝/下载权重，环境、报告、代码讲解和交接均已保存。该结论只覆盖本次模型/硬件/同步eager执行轮，不代表请求级TTFT或所有混合组合。默认配置不变，当前契约见[ARCHITECTURE](docs/ARCHITECTURE.md)，历史4090结果见第18/19章。
+现在先读[第21章](docs/chapters/21-multi-workers.md)和[多卡路线](docs/ROADMAP.md)。例子中A在卡0于8/10/12ms输出，B在卡1于4/6ms输出；卡间区间可重叠，每卡队列、Scheduler、Predictor、KV与恢复状态独立。本轮完成路线第1阶段，下一阶段才是固定1P1D与KV传输。
 
-当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替、混合 batch、KV分页准入与可配置抢占/重算；新增可选3B/4090纯P/D校准参数，其他范围仍未验证。后续计划：共享/COW、实际容量验证和4090耗时校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。
+此前完成[第20章：A6000受控混合验证](docs/chapters/20-a6000-mixed.md)。直接使用A6000本地Qwen2.5-3B基础版，独立纯P/D拟合后冻结参数，9组1P+1/3/7D共180个目标轮的平均误差28.80%→5.64%，最大10.35%；未用混合数据调参。纯P/D的4组留出平均8.08%，P256仍高估21.40%。GPU已释放，没有拷贝/下载权重，环境、报告、代码讲解和交接均已保存。该结论只覆盖本次模型/硬件/同步eager执行轮，不代表请求级TTFT或所有混合组合。默认配置不变，当前契约见[ARCHITECTURE](docs/ARCHITECTURE.md)，历史4090结果见第18/19章。
+
+当前支持ShareGPT单轮负载、人数/token预算、Prefill分块、阶段交替、混合batch、KV分页准入与可配置抢占/重算，以及多个独立Mix worker的固定请求归属。4090/A6000校准仅覆盖对应报告范围，多卡请求级精度未验证。后续按[ROADMAP](docs/ROADMAP.md)推进，当前不自动加入P/D交接。完整历史见[学习日志](docs/LEARNING_LOG.md)，继续工作先读[交接](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md)和AGENTS.md。

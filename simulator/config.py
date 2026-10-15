@@ -1,6 +1,6 @@
 """配置边界：把 JSON 转成经过校验的请求、策略和耗时。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 from typing import cast
@@ -12,10 +12,13 @@ from .predictor import Calibration, DeviceProfile, ModelProfile, PredictorSettin
 from .kv_cache import KVConfig
 from .memory_budget import MemoryBudget, MemoryDevice, MemoryModel, MemorySettings, resolve_budget
 from .recovery import RecoveryConfig
+from .worker import WorkerConfig
 
 
 @dataclass(frozen=True)
 class Experiment:
+    """多卡以workers/assignments为准；旧单卡字段保留为首worker兼容视图。"""
+
     requests: tuple[Request, ...]
     timing: Timing
     policy: Policy
@@ -34,6 +37,8 @@ class Experiment:
     memory_budget: MemoryBudget | None = None
     memory_provenance: dict | None = None
     recovery_config: RecoveryConfig = RecoveryConfig()
+    workers: tuple[WorkerConfig, ...] = ()
+    assignments: tuple[tuple[str, str], ...] = ()
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -70,9 +75,87 @@ def _fields(value: object, expected: set[str], location: str, optional: set[str]
 
 
 def load_experiment(path: Path) -> Experiment:
-    # 【重点 1：先读配置，不让执行内核解析 JSON。】
+    """【多卡重点4】逐卡解析资源；旧单卡字段保留，多卡执行必须使用workers。"""
     config_path = path.resolve()
     raw = _fields(_read_json(config_path), {"workload"}, "config",
+                  {"timing", "predictor", "kv_cache", "recovery", "scheduler",
+                   "scheduler_profiles", "workers", "routing"})
+    if "scheduler" in raw and ("workers" in raw or "scheduler_profiles" in raw):
+        raise ValueError("scheduler与scheduler_profiles/workers不能混用")
+    if "predictor" in raw and isinstance(raw["predictor"], dict):
+        if raw["predictor"].get("kind") == "roofline" and "timing" in raw:
+            raise ValueError("roofline不能同时设置教学timing")
+    entries = raw.get("workers")
+    if entries is None and "scheduler" in raw:
+        entries = [None]  # 旧配置在原解析器内自动产生唯一Mix worker。
+    if not isinstance(entries, list) or not entries:
+        raise ValueError("workers必须是非空数组")
+    multiple = len(entries) > 1
+    if multiple and ("kv_cache" in raw or "recovery" in raw):
+        raise ValueError("多worker请将kv_cache/recovery放在各worker内，避免误用同一GPU池")
+    parsed: list[WorkerConfig] = []
+    first: Experiment | None = None
+    for index, entry in enumerate(entries):
+        local = {key: value for key, value in raw.items() if key != "routing"}
+        gpu_id = None
+        if entry is not None:
+            spec = _fields(entry, {"id", "role", "scheduler_profile"}, f"workers[{index}]",
+                           {"gpu_id", "timing", "predictor", "kv_cache", "recovery"})
+            gpu_id = spec.get("gpu_id")
+            if multiple and "gpu_id" not in spec:
+                raise ValueError("多worker必须显式指定各自gpu_id")
+            if "gpu_id" in spec and (not isinstance(gpu_id, str) or not gpu_id.strip()):
+                raise ValueError("worker.gpu_id必须是非空字符串")
+            local["workers"] = [{key: spec[key] for key in ("id", "role", "scheduler_profile")}]
+            if "timing" in spec and "predictor" in spec:
+                if not isinstance(spec["predictor"], dict) or spec["predictor"].get("kind") != "teaching":
+                    raise ValueError("worker的roofline不能同时设置timing")
+            # 耗时来源整体替换，不把父级roofline与子级教学timing拼在一起。
+            if "timing" in spec:
+                local.pop("predictor", None)
+            if "predictor" in spec and isinstance(spec["predictor"], dict):
+                if spec["predictor"].get("kind") == "roofline":
+                    local.pop("timing", None)
+            for key in ("timing", "predictor", "kv_cache", "recovery"):
+                if key in spec:
+                    local[key] = spec[key]
+        experiment = _load_single_experiment(config_path, local, first)
+        if first is None:
+            first = experiment
+        resolved_gpu = gpu_id if gpu_id is not None else (
+            experiment.kv_config.gpu_id if experiment.kv_config is not None else "gpu_0")
+        parsed.append(WorkerConfig(
+            experiment.worker_id, resolved_gpu, experiment.scheduler_profile,
+            experiment.timing, experiment.predictor_settings, experiment.kv_config,
+            experiment.recovery_config, experiment.profile_name, experiment.worker_role,
+            experiment.memory_budget, experiment.memory_provenance))
+    if len({worker.worker_id for worker in parsed}) != len(parsed):
+        raise ValueError("worker.id必须唯一")
+    if len({worker.gpu_id for worker in parsed}) != len(parsed):
+        raise ValueError("当前各worker必须使用不同gpu_id")
+    assert first is not None
+    if "routing" in raw:
+        routing = _fields(raw["routing"], {"policy", "assignments"}, "routing")
+        if routing["policy"] != "fixed" or not isinstance(routing["assignments"], dict):
+            raise ValueError("当前routing只支持fixed与显式assignments对象")
+        assignments = routing["assignments"]
+    elif multiple:
+        raise ValueError("多worker必须显式配置固定routing.assignments")
+    else:
+        assignments = {request.request_id: parsed[0].worker_id for request in first.requests}
+    if set(assignments) != {request.request_id for request in first.requests}:
+        raise ValueError("固定归属表必须恰好覆盖全部请求，不能遗漏或多写")
+    worker_ids = {worker.worker_id for worker in parsed}
+    if any(not isinstance(owner, str) or owner not in worker_ids for owner in assignments.values()):
+        raise ValueError("固定归属表引用了不存在的worker")
+    return replace(first, workers=tuple(parsed), assignments=tuple(assignments.items()))
+
+
+def _load_single_experiment(path: Path, raw_config: dict,
+                            workload_source: Experiment | None = None) -> Experiment:
+    # 【重点 1：先读配置，不让执行内核解析 JSON。】
+    config_path = path.resolve()
+    raw = _fields(raw_config, {"workload"}, "config",
                   {"timing", "predictor", "kv_cache", "recovery", "scheduler", "scheduler_profiles", "workers"})
     workload = _fields(raw["workload"], {"path"}, "workload")
     recovery = _fields(raw.get("recovery", {"capacity_policy": "block"}), {"capacity_policy"},
@@ -134,7 +217,7 @@ def load_experiment(path: Path) -> Experiment:
                 SchedulerConfig(**limits))
         workers = raw.get("workers")
         if not isinstance(workers, list) or len(workers) != 1:
-            raise ValueError("当前只支持一个逻辑 worker；多 worker 需要后续路由和交接")
+            raise ValueError("内部单卡资源解析需要恰好一个已拆分worker")
         worker = _fields(workers[0], {"id", "role", "scheduler_profile"}, "workers[0]")
         worker_id, worker_role, profile_name = worker["id"], worker["role"], worker["scheduler_profile"]
         if not isinstance(worker_id, str) or not worker_id.strip():
@@ -189,31 +272,36 @@ def load_experiment(path: Path) -> Experiment:
 
     # 【重点 2：负载相对路径以配置文件所在目录为基准，不依赖运行目录。】
     workload_path = (config_path.parent / workload["path"]).resolve()
-    rows = _read_json(workload_path)
-    if not isinstance(rows, list):
-        raise ValueError("负载文件必须是请求数组")
-    requests = []
-    for index, row in enumerate(rows):
-        fields = _fields(row, {"request_id", "arrival_ms", "input_tokens", "output_tokens"},
-                         f"workload[{index}]")
-        try:
-            requests.append(Request(**fields))
-        except ValueError as error:
-            raise ValueError(f"workload[{index}]：{error}") from error
-    if len({item.request_id for item in requests}) != len(requests):
-        raise ValueError("负载中的 request_id 必须唯一")
+    if workload_source is None:
+        rows = _read_json(workload_path)
+        if not isinstance(rows, list):
+            raise ValueError("负载文件必须是请求数组")
+        requests = []
+        for index, row in enumerate(rows):
+            fields = _fields(row, {"request_id", "arrival_ms", "input_tokens", "output_tokens"},
+                             f"workload[{index}]")
+            try:
+                requests.append(Request(**fields))
+            except ValueError as error:
+                raise ValueError(f"workload[{index}]：{error}") from error
+        if len({item.request_id for item in requests}) != len(requests):
+            raise ValueError("负载中的 request_id 必须唯一")
 
-    # 生成负载的说明文件包含分词身份；校验它对应当前请求文件，避免沿用旧说明。
-    manifest_path = workload_path.with_suffix(".manifest.json")
-    metadata = None
-    if manifest_path.exists():
-        metadata = _read_json(manifest_path)
-        if not isinstance(metadata, dict) or metadata.get("schema_version") != 1:
-            raise ValueError("负载 manifest 版本或结构无效")
-        if metadata.get("requests_sha256") != sha256_file(workload_path):
-            raise ValueError("负载与 manifest 校验和不匹配，请重新准备")
-        if metadata.get("selected_count") != len(requests):
-            raise ValueError("负载与 manifest 请求数量不匹配")
+        # 生成负载的说明文件包含分词身份；校验它对应当前请求文件，避免沿用旧说明。
+        manifest_path = workload_path.with_suffix(".manifest.json")
+        metadata = None
+        if manifest_path.exists():
+            metadata = _read_json(manifest_path)
+            if not isinstance(metadata, dict) or metadata.get("schema_version") != 1:
+                raise ValueError("负载 manifest 版本或结构无效")
+            if metadata.get("requests_sha256") != sha256_file(workload_path):
+                raise ValueError("负载与 manifest 校验和不匹配，请重新准备")
+            if metadata.get("selected_count") != len(requests):
+                raise ValueError("负载与 manifest 请求数量不匹配")
+    else:
+        # 多卡共享同一份不可变负载，不重复读取/分词，也不共享执行进度。
+        requests = workload_source.requests
+        metadata = workload_source.workload_metadata
     # 【重点 3：复用原 Request / Timing 的校验，返回不可变实验输入。】
     return Experiment(tuple(requests), timing_config,
                       cast(Policy, policy),

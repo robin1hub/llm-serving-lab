@@ -1,6 +1,6 @@
 # 当前架构与代码契约
 
-本文件是当前实现地图，供用户和后续 AI 快速定位。日期2026-10-13；历史阶段见 LEARNING_LOG，不以旧记录替代当前契约。每次机制变动同步更新本页、对应章节和 HANDOFF。
+本文件是当前实现地图，供用户和后续 AI 快速定位。更新日期2026-10-15。当前已支持多个独立Mix worker与共享事件堆，详细学习说明见第21章，后续路线见ROADMAP.md。单卡旧接口保留；P/D交接尚未实现。第15–20章补充按历史阶段追加，早期“未校准/未采集”的说明不代表当前状态；限定范围实测来源以第18/20章与摘要报告为准。
 
 ## 模块地图
 
@@ -12,7 +12,7 @@ flowchart LR
     CFG[实验JSON] --> C[config.load_experiment]
     W --> C
     C --> R[run_simulation.py]
-    R --> E[engine.simulate_events]
+    R --> E[engine.simulate_events / simulate_workers]
     E --> S[scheduler.decide]
     S --> P[不可变BatchPlan]
     P --> E
@@ -36,6 +36,7 @@ flowchart LR
 | simulator/config.py | 校验实验JSON、读取标准负载、核对manifest | 不修改请求进度 |
 | simulator/scheduler.py | SchedulerProfile、约束、快照、计划、只读选批、完成反馈、轮转纯函数 | 不分配KV、不生成token、不推进时间 |
 | simulator/engine.py | 持有队列与进度、提交计划、处理事件与完成 | 不解析原始文本或拟合真实耗时 |
+| simulator/worker.py | 不可变WorkerConfig、独立卡身份和资源输入校验 | 不保存动态队列、不路由、不传输KV |
 | simulator/memory_budget.py | 设备/模型/预留参数、KV字节及整块容量换算 | 不连接服务器、不部署模型、不管理块生命周期 |
 | simulator/kv_cache.py | KVConfig/Block/Table/Reservation、单GPU池、只读准入、事务与冻结快照 | 不选原始候选、不计算token内容、不进行网络传输 |
 | simulator/recovery.py | 独立策略配置、只读受害者选择、暂停/FIFO恢复与进展保护状态 | 不分配KV、不预测耗时、不决定最终输出长度 |
@@ -47,15 +48,19 @@ flowchart LR
 
 Request 记录输入参数；实际最终输出长度只供内核判断完成，不放入 Scheduler 快照。ReadyTask 的候选 token_count 是待处理工作量；BatchPlan 内的 token_count 是这轮实际执行工作量。
 
-engine 的局部可变状态为 future 最小堆、waiting deque、active列表、prefill_done字典、token_times/records/starts字典、busy/wakeup_pending与时钟。没有全局运行状态，每次 simulate_events 独立。
+engine._drive_workers持有本次运行唯一future最小堆、sequence和全局启动顺序；各_WorkerRuntime独占waiting deque、active列表、prefill_done、token_times/records/starts、busy/wakeup_pending、Scheduler/Predictor/BlockPool/RecoveryController。所有运行状态均在一次调用内新建，不跨实验共享。runtime.now_ms只复制本次收到事件的时间，唯一时间来源是全局堆。
 
 每次运行创建独立 Scheduler，记录 last_completed_phase。decide 仍只读候选与阶段状态；完成事件通过 on_batch_completed 更新该实例的上轮阶段。配置方案不可变，可复用方案但不共享 Scheduler 的运行状态。
 
-未来事件 _ScheduledEvent 按(time_ms, priority, sequence)排序，priority为arrival=0、complete=1、wakeup=2。事件优先级不是阶段优先级；同刻全部到达/完成发生后才选批。complete携带启动时的BatchPlan，不重新选人。
+未来事件_ScheduledEvent携带worker_id，按(time_ms, priority, sequence)排序，priority为arrival=0、complete=1、wakeup=2；worker_id不参与排序。同刻所有卡的全部到达/完成发生后才选批。complete携带启动时的BatchPlan和本卡KVReservation，不重新选人，不修改其他卡busy。
 
 ## 当前配置契约
 
-推荐实验顶层为 workload/timing/scheduler_profiles/workers。方案含 prefill_algorithm、decode_algorithm、mix_algorithm 与必填 constraints 对象；支持 fcfs_chunked、round_robin 和四种 Mix 选择规则 prefill_first/decode_first/alternating/mixed_decode_first。constraints 仅接受 max_batch_requests/max_tokens_per_batch/prefill_chunk_tokens，可选正整数或 null，省略/null 不限制。workers 按方案名引用，字段 id/role/scheduler_profile 必填。P 要求 Prefill 槽，D 要求 Decode 槽，Mix 要求三个槽。所有方案均校验；目前执行只接受一个 Mix worker，P/D 或多个 worker 明确报错。
+推荐实验顶层为workload/timing/scheduler_profiles/workers，多卡另含routing。方案含prefill_algorithm、decode_algorithm、mix_algorithm和constraints；支持fcfs_chunked、round_robin与prefill_first/decode_first/alternating/mixed_decode_first。约束max_batch_requests/max_tokens_per_batch/prefill_chunk_tokens为可选正整数或null。workers按方案名引用，id/role/scheduler_profile必填；当前完整运行只接受Mix，Scheduler单独仍可校验P/D槽，但完整P/D角色明确报错。
+
+多个worker时gpu_id必填且各卡唯一，worker.id也唯一。worker可设置自己的timing/predictor/kv_cache/recovery；顶层耗时作为默认，子级timing替换父级predictor，子级roofline替换父级timing。多卡禁止顶层KV/recovery，必须逐卡指定；KV.gpu_id必须与worker.gpu_id一致。每卡可人工设块数或引用独立显存profile，路径与结构校验复用原逻辑。未启用KV就无容量约束。
+
+routing只支持policy=fixed与assignments对象，恰好覆盖所有请求并引用有效worker。多卡不配置routing明确报错；单卡省略时全部归唯一worker。固定归属不会自动迁移或负载均衡。Experiment保留旧单卡字段为首worker的兼容视图，多卡执行必须读取workers/assignments，不能误用首卡资源处理所有请求。
 
 旧 workload/scheduler/timing JSON 仍兼容，scheduler.policy 转换为 Mix 槽；新旧写法禁止混用，constraints 不允许 policy。Python 的 SchedulerConfig.policy 保留作兼容入口，提供 profile 后阶段选择以 profile.mix_algorithm 为准。未知字段/算法、错误引用均报错，不静默降级。第9章有完整配置与选批流程。
 
@@ -63,7 +68,7 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 
 ## 执行契约与必须保持的不变量
 
-1. 单GPU执行区间不重叠；busy时到达只排队，不抢占。
+1. 同一GPU执行区间不重叠，不同独立GPU允许重叠；busy时本卡到达只排队，不抢占。
 2. Scheduler.decide不改变快照或队列，计划可单阶段或Mixed；Prefill最多一个请求的输入块，Decode轮转。普通选批成员阶段仍为Prefill/Decode，批级Mixed标签不用于更新请求状态。
    Mix 槽仅在 P/D 都就绪时决定阶段；alternating 依据上轮完成阶段选择另一阶段，初始选 P。仅一阶段就绪时不空转，只有完成事件改变交替状态。mixed_decode_first先选Decode，再用剩余人数槽与token预算加入队首Prefill块；空间耗尽则仅Decode，不预留Prefill额度。
 3. 每计划成员数不超过人数上限，token_count总和不超过token上限；Prefill还不超过chunk。
@@ -71,7 +76,7 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 5. 非最终Prefill块不生成输出、不进入active；最终块生成首token，单输出请求直接完成。
 6. starts记录第一块开始，不能被后续块覆盖；waiting包含未開始或未完成输入，但不包含未来未到达请求。
 7. Decode每成员一次产生一个输出，完成者退出；未完成已服务者移到轮转尾部。
-8. 模拟结束后每个请求输出数量等于目标，token时间递增；不暴露目标长度给选批策略。
+8. completed请求输出数量等于目标，token时间递增；blocked时保留未完成进度。路由与Scheduler不读取最终输出目标作选择。
 9. 时间只在取事件时前进；启动只安排未来complete。
 10. 默认teaching且未设置新预算时保留原A/B与ShareGPT请求结果和执行区间；trace/plans/estimates可增加说明字段。选择roofline会改变事件时间，可能进一步改变下一轮就绪候选。
 
@@ -85,13 +90,13 @@ workload.path相对配置目录；CLI的--config和--output相对cwd。generated
 
 TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所有间隔，吞吐窗口首到达至末完成含空闲，空样本null。
 
-输出schema_version仍为1，新增 worker 与 resolved_scheduler_profile 为扩展，记录实际引用与解析后算法/约束；scheduler 扁平字段保留兼容。旧结果保持可读，但不能当作启用了新机制。plans[i]对应steps[i]。
+单卡输出schema_version=1保持原样。多卡输出schema_version=2，steps含worker_id/gpu_id，requests带归属，workers分别保存资源/局部summary/KV/恢复，routing保存固定映射。全局steps/plans/estimates按启动顺序一一对应；trace按实际全局事件处理顺序记录。全局summary从全部已完成请求汇总，不相加每卡时长或局部吞吐；blocked时仅统计完成请求。各卡busy_time_ms为自身区间和，不是集群耗时。
 
 第10章新增predictor配置与estimates明细。teaching的timing_source/timing维持原值；roofline来源uncalibrated_roofline、timing为null，不将内部兼容Timing默认值展示成启用参数。
 
 ## 明确尚未实现
 
-共享KV/COW/传输保护、实际显存预算验证、CPU交换、SLO优化、多worker/P→D交接/传输、真实模型执行、4090校准、失败/取消/截止终止。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
+共享KV/COW/传输保护、模拟容量公式与实际池大小的系统对齐、CPU交换、SLO优化、P→D交接/传输、动态路由、TP/PP、失败/取消/截止终止。已有4090/A6000限定范围耗时校准，但多卡请求级精度未验证；真实模型执行仅用于独立采集工具，不属于模拟内核。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
 
 ## 验证与交接入口
 
@@ -102,7 +107,7 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF和本页，再看对应实现/测试；保留用户修改。运行机制实现到第14章，第15章是校准材料准备，用户尚未确认理解此步，先讲解结果再选择下一机制，不自行扩为完整系统。test_predictor.py验证公式、上下文边界、兼容与导出。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF/本页/ROADMAP/第21章。当前完成多卡路线第1阶段，用户理解尚未确认，不自动继续P/D交接。test_multi_worker验证并发/顺序/容量/恢复隔离和报告，test_predictor验证公式与上下文。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
 
 ## 第11章混合执行补充
 
@@ -195,3 +200,11 @@ analyze_mixed.py只接受actual items同时有P/D、非预热、合法Worker计�
 用户已停止替代权重跨机拷贝，不能自动恢复或加载partial模型。随后用户授权直接在A6000测试；正式collect_mixed.py已通过GPU最小试跑，新增launcher --mixed入口。先让驻留请求进入纯Decode，再注入一个完整Prefill，不修改真实vLLM Scheduler。batch_records.match_controlled_mixed按请求身份/完整P/单token D验收恰好一个目标轮；输出数不符或有限step不能结束则失败，无COMPLETE。analyze_mixed对整个矩阵独立验收，再沿用冻结的同GPU纯P/D参数；fit_timing增加来源标签参数，拟合公式不变。详见第20章。
 
 没有请求级配对实验，不从离线执行成本声称TTFT/ITL/吞吐收益。模拟器内核、Predictor公式和默认配置不变；A6000 profile与4090 profile分别保存，不能跨硬件套用精度声明。
+
+## 第21章：多Mix worker基础契约
+
+运行时已重构为每卡_WorkerRuntime与全局_drive_workers，单卡simulate_events是同内核包装，旧EventRun不变；simulate_workers返回ClusterRun及WorkerRun列表。WorkerConfig不可变且逐卡校验身份/KV/恢复条件；每卡独立新建Scheduler/Predictor/BlockPool/RecoveryController。固定归属配置不参考输出目标，无迁移或负载均衡。全局事件以worker_id指向目标状态，不以卡号决定排序。
+
+某卡无可准入计划只退出该次dispatch，全局堆继续运行其他卡；全局堆耗尽后汇总pending，不能提前因一张卡blocked终止整个实验。各池的块ID允许相同，但GPU+块ID一起解释身份，不跨卡合并KV容量。所有卡之间目前不计共享CPU/链路资源干扰。
+
+two_mix_workers示例A在卡0输出8/10/12ms、B在卡1输出4/6ms；全局窗口12ms。相同路由固定、结果确定性可复现。93项测试91通过2分词依赖跳过，9项新增多卡验证；基础/KV/重算三个旧CLI JSON全量不变。路线第1阶段完成，不自动实现后续传输。第21章含数据归属表、流程、配置覆盖、状态边界、输出schema和阅读标记。
