@@ -217,3 +217,7 @@ configs/one_p_one_d.json引用workloads/pd_request.json，A输入4输出3、P2ms
 多卡schema2增加execution_mode=fixed_1p1d、pd、transfers、requests.worker_path；worker_id是最终完成者，routing.assignments是初始P归属。各worker的produced_output_tokens记录实际生成（例子P1/D2），summary仍按本卡保存的完整完成请求统计，不能把P.summary=0误读为未执行。全局输入/输出只计一次。计算steps与transfers分开，CLI另打印KV区间；output/one_p_one_d.json保留完整结果。
 
 验证106测试104通过2分词依赖跳过，新增tests/test_pd.py十三项：手算/首开始首token/context、目标Populating/Ready与源释放、带宽、FIFO/复制计算并行、同刻完成、源容量唤醒、单输出/空负载、chunk、目标不足拒绝、并行事务原子性/回滚、模型字节、CLI。旧basic/kv_blocks/recompute/two_mix_workers四例JSON与此前完整逐项一致，新输出在output/pd-regression。第22章状态/时序图、结构/代码阅读点、手算、多请求表与限制已同步README/ARCHITECTURE/ROADMAP。用户理解待确认，下一步先讲解本章，再讨论第3阶段目标容量等待。未访问服务器、未改师兄或全局依赖；两份8B草稿仍保留未提交。
+
+## 文献筛选补充（2026-10-15）
+
+用户强调最终目标为D侧高压力调度并要求找论文。已联网核对原文/arXiv/会议页，整理docs/READING.md：Mooncake过载准入、DistServe架构与资源、TetriInfer预测与D调度、Llumnix迁移、TaiChi流动Decode、STAR预测重调度、2026gate-and-route排队控制。版本与阅读深度明确标注，Mooncake过载章节采用2024v1第6节，STAR采用v2当前标题，后两篇目前仅摘要核对。建议先读Mooncake/TetriInfer，优先以1P1D的P准入实验衔接当前路线；尚未选定或实现算法，也没有改变第3阶段功能计划。在线策略不得读取真实最终输出长度，长度预测与batch耗时Predictor要分开。纯文档更新，测试基线仍106/104通过/2跳过，无新GPU实验。
