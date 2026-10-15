@@ -1,10 +1,10 @@
 # 项目交接：当前状态
 
-更新时间：2026-10-14（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
+更新时间：2026-10-15（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第18章18-calibration-validation.md（最新拟合/验证）/第17章（原始对照）/第15章（真实采集）/第16章（参照）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第19章19-mixed-validation.md（最新混合分析/停止拷贝）/第18章（拟合/验证）/第17章（原始对照）/第15章（真实采集）/第16章（参照）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
 用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，已完成限定范围拟合和新形状验证，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
@@ -153,3 +153,15 @@ calibration/fresh_validation.json在新采集前固定16形状、8repeat/8novel�
 仅验证Qwen2.5-3B/4090/当前边界/范围附近纯P/D。factor是补偿参数，不是单独测出的物理性能；新长度在原训练范围附近，不保证外推、其他模型/size/显卡/precision/CUDAGraph/框架/TP、Mixed/Recompute/异构上下文或TTFT。公式通用，但参数和精度声明限定profile条件。核心Engine/Predictor不改、默认配置不改；source字段仍固定uncalibrated_roofline，尚未做校准证明绑定的运行时元数据接口，真实来源以独立报告为准。
 
 第18章完整流程/结构/参数/新数据/范围及命令；12个采集专项测试通过（参数恢复/边界、validation隔离、半数新形状、最大误差等），校准profile CLI成功加载；4token例子只是配置核对，未验证该范围。用户学习理解尚未确认，后续讨论Mixed测试与跨模型验证，不自动推进。
+
+## 最新：已有混合轮次分析完成，用户停止权重拷贝（2026-10-15）
+
+用户授权看混合batch效果，优先分析原du-qwen25-3b-eager-fresh-20261014-03中此前排除的混合过渡。219非warm Worker轮、139生成重复、7原投递案例，冻结原3B/4090纯P/D profile无重新拟合；平均绝对案例误差29.28%→21.77%、最大31.55%。典型1P1024+1D（19重复）实测49.51/预测40.98ms低估17.22%；3P512+1D（19重复）66.52/49.37低估25.78%；5P768+1D（19重复）158.32/108.37低估31.55%。7案例等权，案例内生成重复等权。此前纯P/D5.95%不能扩展混合；多数记录是多P混合，当前Scheduler最多1P块。其他1P多D档位多数1–2重复，不够验证所有目标。
+
+analyze_mixed.py读取实际items一次estimate，非P时间+D时间相加；保留部分Prefill/LMHead标记、实际context。报告source_case只是投递实验标签，另按P/D人数与P总token分23组成档位；每轮仍用exact items，档位内上下文可能不同。摘要measurements/du-qwen25-existing-mixed-20261015.json，逐轮输出ignored output/calibration/du-qwen25-existing-mixed-01，模型/软件/有效参数/profile SHA核对。13专项测试通过，第19章说明统计/数据/范围，核心默认不改，无新拟合。
+
+原计划补采1P128/512/1536+1/3/7D，先让D就绪再注入P。杜机mixed-smoke-20261015-01启动前候选GPU1已被他人占用保护退出；-02选GPU2但原/data/HF_MODELS/Qwen2.5-3B-Instruct/config.json不在，LLM初始化前失败，没有模型加载/有效数据/COMPLETE。模型目录现已不存在，/root/model/Qwen/Qwen3-0.6B也只有tokenizer不是可用模型，不能据目录名判断有权重。
+
+用户要求替代模型且尽量不用下载。A6000的/data/HF_MODELS/Qwen2.5-3B两分片/配置仍齐全，是同结构基础版，不是旧Instruct checkpoint；Wang8B仍有但卡忙。曾开始scp -3把A6000已有模型拷到杜机独立models/Qwen2.5-3B-base-from-a6000，用户随后明确“别拷贝了”，已Ctrl-C终止本任务scp并核对本地匹配scp进程无残留。没有启动模型，不再传输/补采，不自动恢复。目标目录可能有partial，保留未删除，不能当完整权重。
+
+受控collect_mixed.py尚未真实GPU验证，已移到ignored output/calibration/drafts/mixed/collect_mixed.py，未公开正式代码；本地/远端launch_remote已恢复正式不带--mixed版本，远端单独草稿可能仍存在。两份此前取消Wang试验留下的configs/measure_qwen3_8b.json与transfer_qwen3_8b_from_3b.json仍未提交草稿，不混入本轮提交。下一步只在用户重新授权/具备权重条件后考虑补采，当前无本任务运行中的采集/传输。用户理解进度尚未确认。

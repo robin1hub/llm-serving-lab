@@ -1,5 +1,7 @@
 # 校准材料入口
 
+2026-10-15新增[第19章](../docs/chapters/19-mixed-validation.md)：旧实测219混合轮次、139生成重复、7原案例，纯P/D参数沿用后平均绝对误差21.77%。专门补采未运行成功；用户已要求停止模型拷贝。正式工具scripts/analyze_mixed.py，受控采集器仅ignored草稿，无新GPU结果。
+
 最新见[第18章](../docs/chapters/18-calibration-validation.md)：已用旧12组fit求参数、旧4组验证、重新采8旧/8新形状测试，同一新数据平均误差46.27%→5.95%，最大13.65%。新结果未回流拟合。参数configs/calibrated_qwen25_3b.json，来源与统计measurements/du-qwen25-{fit,fresh-validation}-20261014.json；仅适用已测模型/硬件/运行边界，Mixed未验证。以下保留此前材料入口。
 
 当前新增[第17章完整硬件对照](../docs/chapters/17-measured-comparison.md)：杜机已有Qwen2.5-3B、GPU4、16组矩阵/400次生成完成，基线误差54.39%，师兄默认解析预测同一实测误差54.17%，不拟合；三方表见第17章第6节。当前有方案、模板、独立环境及采集入口；[王服务器共享卡smoke](wang-shared-smoke.md)已成功，取得实际容量和少量P/D数据，尚未完成真实拟合。已完成师兄模拟器参照拟合；参照不是硬件校准，见[第16章](../docs/chapters/16-reference-comparison.md)及reference/result.json。可选configs/reference_senior.json仅在显式运行时使用。

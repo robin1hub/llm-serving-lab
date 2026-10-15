@@ -14,6 +14,7 @@ from simulator.predictor import PredictorItem
 from calibration.scripts.fit_timing import fit_nonnegative, training_basis
 from calibration.scripts.matrix_plan import load_matrix_plan
 from calibration.scripts.validate_fresh import summarize_errors
+from calibration.scripts.analyze_mixed import analyze_rows
 
 
 def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
@@ -24,6 +25,38 @@ def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
 
 
 class CalibrationRecordTests(unittest.TestCase):
+    def test_mixed_analysis_estimates_whole_batch_and_excludes_other_rows(self):
+        class RecordingPredictor:
+            def __init__(self):
+                self.calls = []
+
+            def estimate(self, items):
+                self.calls.append(items)
+                return NS(duration_ms=7 if len(items) == 2 else 1000)
+
+        items = [{"request_id": "P", "phase": "Prefill", "new_tokens": 2,
+                  "context_tokens": 0, "produces_token": False},
+                 {"request_id": "D", "phase": "Decode", "new_tokens": 1,
+                  "context_tokens": 8, "produces_token": True}]
+        def row(sample, duration, members, warmup=False):
+            return {"shape_id": "source", "sample_id": sample, "iteration_index": 1,
+                    "is_warmup": warmup, "items": members, "record_status": "measured",
+                    "timing_scope": "worker_execute_wall", "preemptions": 0,
+                    "duration_ms": duration, "actual_batch_requests": len(members)}
+
+        data = [row("a", 10, items), row("b", 20, items), row("b", 20, items),
+                row("b", 20, items), row("warm", 999, items, True), row("pure", 999, items[1:])]
+        before, after = RecordingPredictor(), RecordingPredictor()
+        cases, patterns, details = analyze_rows(data, before, after)
+        self.assertEqual(cases[0]["measured_ms"], 15)
+        self.assertEqual(cases[0]["repetitions"], 2)
+        self.assertEqual(len(details), 4)
+        self.assertEqual((patterns[0]["prefill_requests"], patterns[0]["decode_requests"]), (1, 1))
+        self.assertTrue(all(len(batch) == 2 and not batch[0].produces_token for batch in after.calls))
+        self.assertEqual(cases[0]["calibrated_ms"], 7)
+        with self.assertRaises(ValueError):
+            analyze_rows([row("bad", float("nan"), items)], before, after)
+
     def test_validation_reports_worst_shape_and_does_not_hide_it_in_mean(self):
         report = summarize_errors([{"error": -0.01}, {"error": 0.39}], "error")
         self.assertAlmostEqual(report["mean_absolute_relative_error"], 0.2)

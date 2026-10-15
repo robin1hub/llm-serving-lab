@@ -187,3 +187,9 @@ fit_timing只从旧split=fit形状构造训练基函数，相对平方误差等�
 collector/launch_remote新增可选--matrix，矩阵schema1固定16纯P/D、一半repeat一半novel，配置warmups/repeats/seed/token_base及记录SHA；不传时保留原采样行为。validate_fresh要求profile/矩阵/模型/软件/有效参数匹配、COMPLETE、输出和有效重复通过；按same actual items比较基线/校准，分别报告复测/novel及最大误差。
 
 configs/calibrated_qwen25_3b.json是可选测量参数，来源/条件/范围在fit和fresh报告。新轮平均误差5.95%、最大13.65%仅是已测3B/4090/Worker同步eager纯P/D范围观测，未声明所有模型精度；Mixed仍未专门验证。BatchEstimate.source暂仍原uncalibrated_roofline，尚未加绑定证明的来源接口，不能据此否认显式系数生效或宣称其他profile已校准。第18章解释公式通用和参数专用。
+
+## 第19章：旧混合轮次离线验证边界
+
+analyze_mixed.py只接受actual items同时有P/D、非预热、合法Worker计时/无恢复；冻结纯P/D profile SHA和模型/软件/有效参数检查，整批一次estimate。汇总对原投递案例等权，案例内按生成重复中位数，另报实际P/D人数/P token档位及重复数；原case标签不当实际成员数。219轮/139重复/7案例沿用系数误差21.77%，不保证所有混合类型或当前1P调度组合，详见第19章。
+
+专门1P+多个D采集器未通过GPU运行，只保留ignored草稿，无新正式入口/核心机制。用户已停止替代权重跨机拷贝，不能自动恢复或加载partial模型。没有请求级配对实验，不从离线执行成本声称TTFT/ITL/吞吐收益。
