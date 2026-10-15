@@ -1,5 +1,7 @@
 # 校准材料入口
 
+最新：2026-10-15完成[A6000受控混合验证](../docs/chapters/20-a6000-mixed.md)。直接使用本地3B基础版，纯P/D 12组拟合、4组留出后冻结独立A6000 profile；再测9组1P+多个D/180目标轮，平均绝对误差28.80%→5.64%，最大10.35%，混合数据未参与拟合。正式采集器scripts/collect_mixed.py及launcher --mixed已通过GPU运行；分析仅选择验收的目标iteration，排除驻留准备阶段的其他混合轮。证据为measurements/a6000-qwen25-{baseline,fit,controlled-mixed}-20261015.json。GPU已释放，没有跨机权重拷贝；以下保留此前各阶段记录。
+
 2026-10-15新增[第19章](../docs/chapters/19-mixed-validation.md)：旧实测219混合轮次、139生成重复、7原案例，纯P/D参数沿用后平均绝对误差21.77%。专门补采未运行成功；用户已要求停止模型拷贝。正式工具scripts/analyze_mixed.py，受控采集器仅ignored草稿，无新GPU结果。
 
 最新见[第18章](../docs/chapters/18-calibration-validation.md)：已用旧12组fit求参数、旧4组验证、重新采8旧/8新形状测试，同一新数据平均误差46.27%→5.95%，最大13.65%。新结果未回流拟合。参数configs/calibrated_qwen25_3b.json，来源与统计measurements/du-qwen25-{fit,fresh-validation}-20261014.json；仅适用已测模型/硬件/运行边界，Mixed未验证。以下保留此前材料入口。

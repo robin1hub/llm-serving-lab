@@ -60,7 +60,8 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 17. [完整硬件实测对照](docs/chapters/17-measured-comparison.md)：已有模型、实际batch匹配与原始预测误差。
 18. [拟合与新形状验证](docs/chapters/18-calibration-validation.md)：冻结参数、半数新形状、适用范围。
 19. [混合轮次验证](docs/chapters/19-mixed-validation.md)：已有219混合轮次、实际组成、验证限制。
+20. [A6000受控混合验证](docs/chapters/20-a6000-mixed.md)：换硬件后的独立纯P/D拟合、1P+多D实验与验收。
 
-现在主要阅读[第19章：混合验证](docs/chapters/19-mixed-validation.md)：已有219混合轮次沿用纯P/D参数，平均绝对案例误差21.77%，1P+多个D专门补采未完成；用户已停止模型拷贝，无新GPU测量。此前[第18章](docs/chapters/18-calibration-validation.md)：已用12组fit拟合并重新采16组（8旧/8新），新轮平均误差46.27%→5.95%、最大13.65%。只验证3B/4090/当前纯P/D Worker同步eager条件，默认配置不变。此前[第17章](docs/chapters/17-measured-comparison.md)，杜机已有Qwen2.5-3B/单4090完成16组矩阵，原始假设基线平均绝对误差54.39%，师兄同条件默认解析预测54.17%，尚未拟合。已跑通单请求与16组纯P/D参照，另存可选参照系数。随后[王服务器GPU0共享卡smoke](calibration/wang-shared-smoke.md)也成功，取得实际容量和少量纯P/D耗时；尚未完成真实拟合。[独立环境](calibration/server-environment.md)已准备，校准材料在 [calibration/](calibration/README.md)。第14章恢复例子保留。运行 `python3 run_simulation.py --config configs/recompute.json --output output/recompute.json` 查看暂停B、完成A、重算B的例子；默认仍为block，抢占需显式启用。第13章容量示例保留。运行 `python3 run_simulation.py --config configs/rtx4090_memory.json --output output/rtx4090_memory.json` 查看服务器4090＋Qwen3-8B容量示例。独立profile在configs/profiles中；1972块来自实读显存/模型元数据和90%使用比例、2GiB预留假设，尚未实际校准。原第12章人工块数实验保留。当前仍单GPU，共享/COW/传输未实现。当前契约见 [ARCHITECTURE](docs/ARCHITECTURE.md)。
+现在主要阅读[第20章：A6000受控混合验证](docs/chapters/20-a6000-mixed.md)。直接使用A6000本地Qwen2.5-3B基础版，独立纯P/D拟合后冻结参数，9组1P+1/3/7D共180个目标轮的平均误差28.80%→5.64%，最大10.35%；未用混合数据调参。纯P/D的4组留出平均8.08%，P256仍高估21.40%。GPU已释放，没有拷贝/下载权重，环境、报告、代码讲解和交接均已保存。该结论只覆盖本次模型/硬件/同步eager执行轮，不代表请求级TTFT或所有混合组合。默认配置不变，当前契约见[ARCHITECTURE](docs/ARCHITECTURE.md)，历史4090结果见第18/19章。
 
 当前支持 ShareGPT 单轮负载、人数/token 预算、Prefill 分块、阶段交替、混合 batch、KV分页准入与可配置抢占/重算；新增可选3B/4090纯P/D校准参数，其他范围仍未验证。后续计划：共享/COW、实际容量验证和4090耗时校准，多 worker 与 P→D 交接再单独实现。完整记录见 [学习日志](docs/LEARNING_LOG.md)，继续工作先读 [交接记录](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md) 和 AGENTS.md。

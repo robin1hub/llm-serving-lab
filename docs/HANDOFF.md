@@ -2,9 +2,11 @@
 
 更新时间：2026-10-15（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
 
+最新结果：A6000直接测试已完成。第20章和本页末尾是当前进度；下方旧阶段关于“尚未拟合/无新GPU结果/采集器仅草稿”的说明已被后续记录取代。
+
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → 第19章19-mixed-validation.md（最新混合分析/停止拷贝）/第18章（拟合/验证）/第17章（原始对照）/第15章（真实采集）/第16章（参照）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → 第20章20-a6000-mixed.md（A6000直接测试）/第19章（旧混合分析/停止拷贝）/第18章（拟合/验证）→ 对应代码和测试。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
 
 用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，已完成限定范围拟合和新形状验证，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
@@ -36,7 +38,7 @@ python3 run_simulation.py --config configs/kv_blocked.json --output output/kv_bl
 
 ## 尚未实现
 
-多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、实际容量实测验证、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、其他模型/硬件实测、正式4090耗时拟合。引用/GPU字段是实际结构，不等于这些机制已启用。当前一池最多一在途事务。
+多worker/P→D交接、共享KV引用接口、写时复制、传输保护/跨卡副本、模拟容量公式与实测池大小的系统对齐、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、跨模型/硬件泛化精度验证。已经有4090与A6000限定范围耗时拟合及实际KV池记录，不代表全部校准完成。引用/GPU字段不等于扩展机制已启用，当前一池最多一在途事务。
 
 ## 本地环境
 
@@ -165,3 +167,17 @@ analyze_mixed.py读取实际items一次estimate，非P时间+D时间相加；保
 用户要求替代模型且尽量不用下载。A6000的/data/HF_MODELS/Qwen2.5-3B两分片/配置仍齐全，是同结构基础版，不是旧Instruct checkpoint；Wang8B仍有但卡忙。曾开始scp -3把A6000已有模型拷到杜机独立models/Qwen2.5-3B-base-from-a6000，用户随后明确“别拷贝了”，已Ctrl-C终止本任务scp并核对本地匹配scp进程无残留。没有启动模型，不再传输/补采，不自动恢复。目标目录可能有partial，保留未删除，不能当完整权重。
 
 受控collect_mixed.py尚未真实GPU验证，已移到ignored output/calibration/drafts/mixed/collect_mixed.py，未公开正式代码；本地/远端launch_remote已恢复正式不带--mixed版本，远端单独草稿可能仍存在。两份此前取消Wang试验留下的configs/measure_qwen3_8b.json与transfer_qwen3_8b_from_3b.json仍未提交草稿，不混入本轮提交。下一步只在用户重新授权/具备权重条件后考虑补采，当前无本任务运行中的采集/传输。用户理解进度尚未确认。
+
+## 最新：A6000直接测试完成（2026-10-15）
+
+用户随后明确“如果可以，直接测试a6000”，授权重新进行直接本地权重测试，不恢复跨机模型拷贝。alpha-a6000已有/data/HF_MODELS/Qwen2.5-3B基础版两分片完整；config SHA=27467e2fc311a7656c09a43ae9c3d408211e1f212bbddbc93c8596a06423826f，不是旧Instruct。GPU2 UUID GPU-208f7dc6-a184-3397-89f8-51d91e692d46，48GB，驱动570.124.06。新建独立/data/llm-serving-lab-calibration，Python3.10.12/vLLM0.11.0/torch2.8.0 CUDA12.8/transformers4.56.1，159包检查通过，记录calibration/environments/alpha-a6000.json及freeze。没有复用或修复别人旧Python3.12环境；仅安装项目依赖与小工具，没有模型权重下载/拷贝。
+
+先mixed-smoke-20261015-01验证API，随后a6000-qwen25-3b-pure-20261015-02完成16组/400生成/9214 Worker记录。GPU50%预算、TP1BF16/eager/prefix=False、有效chunk=True、maxlen4096/maxseq8/tokenbudget4096/block16；KV31961块/511376token，预算18851833856字节、权重显存6218668032。未校准基线平均绝对误差49.56%。只用12fit拟合dense=0.7568788631690692、attention=3.060882675764624、overhead=11.729456370363053ms；独立profile configs/calibrated_a6000_qwen25_3b.json SHA=a471d55138c72911531508bcb783cd090ffe657b3f3bb55e40917be0c8005a0b，4090参数未改。4组留出平均8.08%，P256高估21.40%仍是局限，另外三组约3–5%；未回流留出数据调参。
+
+参数冻结后，a6000-qwen25-3b-mixed-20261015-03完成9组/225实验/3743记录；1个P128/512/1536 × 1/3/7个D，每组5warm/20有效。collect_mixed先观察真实全体D就绪，再注入完整P，用原生engine.step/实际Worker计时；精确身份、P范围、单token D、最终输出16/1、恰好目标轮校验。正式analyze_mixed还完整验收矩阵，然后按generation_checks的matched_iteration只选180个目标轮。驻留准备阶段另外114个非warm混合轮必须排除；早期ignored analysis-01包含这些准备轮已作废，正式逐轮输出为a6000-qwen25-mixed-analysis-final，不据旧文件得出结论。
+
+9组等权平均绝对误差28.80%→5.64%，最大10.35%，混合数据未拟合。P128+1D实测17.14/预测17.24ms；P512+3D36.62/34.58；P1536+7D97.33/87.26。实际D context514–515，按成员值预测。限定本次A6000/基础版3B/同步eager/当前组合，不能与4090旧多P混合21.77%直接归因对比，更不代表TTFT/ITL、其他模型、更长上下文、多P或中间chunk都验证。
+
+摘要calibration/measurements/a6000-qwen25-{baseline,fit,controlled-mixed}-20261015.json，完整证据本地ignored output/calibration/<run_id>/及远端runs同名目录。两次正式采集退出0/COMPLETE，GPU2恢复4MiB/0%，无残留推理/模型传输。uv缓存保留在项目内，安装后/data余量约48GiB；不清理其他人的文件。collect_mixed正式公开，launcher新增--mixed；fit_timing只增加device-label/scope来源参数，原拟合公式/默认参数兼容；analyze_mixed补GPU身份/矩阵/目标轮验收。15个采集专项测试通过，配置加载及diff检查通过。第20章有流程/时序、数据结构、重点代码、全部9组表和复现入口。默认模拟器及核心公式不改。
+
+当前用户步骤已完成，下一步先讨论结果：若继续可测更长D上下文或请求级混合调度对照，而不是自动启动更多测试/重新拟合。用户是否理解本次结果尚未确认。两份取消Wang试验的8B配置仍为原有未提交草稿，不混入提交。

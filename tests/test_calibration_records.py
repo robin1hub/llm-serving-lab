@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from calibration.scripts.batch_records import describe_work, select_device
+from calibration.scripts.batch_records import describe_work, match_controlled_mixed, select_device
 from calibration.scripts.summarize_smoke import summarize
 from calibration.scripts.compare_measured import compare_rows
 from calibration.scripts.compare_senior_measured import SeniorReplayPredictor, replay_requests
@@ -14,7 +14,7 @@ from simulator.predictor import PredictorItem
 from calibration.scripts.fit_timing import fit_nonnegative, training_basis
 from calibration.scripts.matrix_plan import load_matrix_plan
 from calibration.scripts.validate_fresh import summarize_errors
-from calibration.scripts.analyze_mixed import analyze_rows
+from calibration.scripts.analyze_mixed import analyze_rows, controlled_target_rows, validate_controlled_run
 
 
 def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
@@ -25,6 +25,40 @@ def schedule(new=(), cached=(), contexts=(), counts=None, resumed=()):
 
 
 class CalibrationRecordTests(unittest.TestCase):
+    def test_controlled_matrix_rejects_missing_or_duplicate_generations(self):
+        metadata = {"run_id": "run", "matrix": {"cases": [[1, 128]], "warmups": 0, "repeats": 1}}
+        sample = "Mixed-D1-P128-0"
+        rows = [{"shape_id": "Mixed-D1-P128", "sample_id": sample, "is_warmup": False,
+                 "iteration_index": 2, "items": [
+                     {"request_id": sample + "-d0", "phase": "Decode", "new_tokens": 1,
+                      "context_tokens": 513, "produces_token": True},
+                     {"request_id": sample + "-p", "phase": "Prefill", "new_tokens": 128,
+                      "context_tokens": 0, "produces_token": True}]}]
+        check = {"run_id": "run", "shape_id": "Mixed-D1-P128", "sample_id": sample,
+                 "is_warmup": False, "matched_iteration": 2,
+                 "actual_outputs": {sample + "-d0": 16, sample + "-p": 1}}
+        validate_controlled_run(metadata, rows, [check])
+        # 驻留请求依次入场时也可能出现混合，不能当成注入新P后的目标测量。
+        preparation = {**rows[0], "iteration_index": 1}
+        self.assertEqual(controlled_target_rows([preparation] + rows, [check]), rows)
+        for checks in ([], [check, check], [{**check, "matched_iteration": 3}],
+                       [{**check, "actual_outputs": {}}]):
+            with self.assertRaises(ValueError):
+                validate_controlled_run(metadata, rows, checks)
+
+    def test_controlled_mixed_requires_exact_members_and_single_complete_prefill(self):
+        p = {"request_id": "P", "phase": "Prefill", "new_tokens": 128,
+             "context_tokens": 0, "produces_token": True}
+        d = {"request_id": "D", "phase": "Decode", "new_tokens": 1,
+             "context_tokens": 513, "produces_token": True}
+        row = {"items": [p, d], "iteration_index": 2}
+        self.assertIs(match_controlled_mixed([row], {"D"}, "P", 128), row)
+        for invalid in ([row, row], [{"items": [p]}],
+                        [{"items": [p, {**d, "request_id": "other"}]}],
+                        [{"items": [{**p, "produces_token": False}, d]}]):
+            with self.assertRaises(ValueError):
+                match_controlled_mixed(invalid, {"D"}, "P", 128)
+
     def test_mixed_analysis_estimates_whole_batch_and_excludes_other_rows(self):
         class RecordingPredictor:
             def __init__(self):

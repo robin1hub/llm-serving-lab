@@ -12,19 +12,23 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--mixed", action="store_true", help="受控1P+nD验证，不参与纯P/D拟合")
     parser.add_argument("--gpu-uuid", default="GPU-0f409808-9870-2765-3a7c-540b7d06c6c7")
     parser.add_argument("--model", type=Path, default=Path("/data/HF_MODELS/Qwen3-8B"))
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
     parser.add_argument("--max-existing-memory-mib", type=int, default=64)
     parser.add_argument("--matrix", type=Path)
     args = parser.parse_args()
+    if args.mixed and args.matrix:
+        raise ValueError("混合验证使用独立固定矩阵，不能指定纯P/D矩阵")
     if Path(args.run_id).name != args.run_id or args.run_id in (".", ".."):
         raise ValueError("run-id必须是单个目录名")
     root = Path("/data/llm-serving-lab-calibration")
     out = root / "runs" / args.run_id
     if out.exists():
         raise ValueError("输出目录已存在")
-    command = [str(root / "venv/bin/python"), str(root / "collect_batches.py"),
+    collector = "collect_mixed.py" if args.mixed else "collect_batches.py"
+    command = [str(root / "venv/bin/python"), str(root / collector),
                "--model", str(args.model), "--output", str(out),
                "--gpu-uuid", args.gpu_uuid,
                "--gpu-memory-utilization", str(args.gpu_memory_utilization),

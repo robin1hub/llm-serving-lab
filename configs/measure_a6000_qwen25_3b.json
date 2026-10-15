@@ -1,0 +1,25 @@
+{
+  "workload": {"path": "../workloads/reference_request.json"},
+  "scheduler_profiles": {
+    "single_mix": {
+      "prefill_algorithm": "fcfs_chunked",
+      "decode_algorithm": "round_robin",
+      "mix_algorithm": "prefill_first",
+      "constraints": {"max_batch_requests": 8, "max_tokens_per_batch": 4096, "prefill_chunk_tokens": 4096}
+    }
+  },
+  "workers": [{"id": "worker_0", "role": "Mix", "scheduler_profile": "single_mix"}],
+  "predictor": {
+    "kind": "roofline",
+    "model": {
+      "num_layers": 36, "hidden_size": 2048, "intermediate_size": 11008,
+      "num_attention_heads": 16, "num_kv_heads": 2, "vocab_size": 151936
+    },
+    "device": {
+      "name": "A6000-baseline-assumed-100TF-1TB-not-calibrated",
+      "peak_flops": 100000000000000,
+      "memory_bandwidth_bytes_per_s": 1000000000000
+    },
+    "calibration": {"dense_factor": 1, "attention_factor": 1, "batch_overhead_ms": 0}
+  }
+}

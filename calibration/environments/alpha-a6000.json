@@ -1,0 +1,27 @@
+{
+  "captured_at_utc": "2026-10-15T01:58:37.325150+00:00",
+  "status": "dependencies_ready",
+  "project_root": "/data/llm-serving-lab-calibration",
+  "python": "3.10.12 (main, Nov 20 2023, 15:14:05) [GCC 11.4.0]",
+  "python_executable": "/data/llm-serving-lab-calibration/venv/bin/python",
+  "packages": {
+    "vllm": "0.11.0",
+    "torch": "2.8.0",
+    "transformers": "4.56.1"
+  },
+  "module_locations": {
+    "torch": "/data/llm-serving-lab-calibration/venv/lib/python3.10/site-packages/torch/__init__.py",
+    "vllm": "/data/llm-serving-lab-calibration/venv/lib/python3.10/site-packages/vllm/__init__.py",
+    "transformers": "/data/llm-serving-lab-calibration/venv/lib/python3.10/site-packages/transformers/__init__.py"
+  },
+  "torch_cuda_build": "12.8",
+  "dependency_check_exit": 0,
+  "dependency_check_output": "Using Python 3.10.12 environment at: /data/llm-serving-lab-calibration/venv\nChecked 159 packages in 4ms\nAll installed packages are compatible\n",
+  "free_disk_bytes": 51763556352,
+  "gpu_runtime_tested": false,
+  "model_loaded": false,
+  "calibration_measured": false,
+  "notes": [
+    "包导入与依赖检查通过不等于模型已经能运行；待空闲GPU再验证"
+  ]
+}

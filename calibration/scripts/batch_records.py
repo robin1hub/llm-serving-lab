@@ -3,6 +3,26 @@
 from typing import Any
 
 
+def match_controlled_mixed(records: list[dict], residents: set[str], new_id: str,
+                           prefill_tokens: int) -> dict:
+    """按成员身份和实际工作量验收，不能只凭投递标签声称测到混合。"""
+    matched = []
+    for row in records:
+        items = row["items"]
+        decode = [item for item in items if item["phase"] == "Decode"]
+        prefill = [item for item in items if item["phase"] == "Prefill"]
+        if (len(items) == len(residents) + 1 and len(decode) == len(residents)
+                and {item["request_id"] for item in decode} == residents
+                and all(item["new_tokens"] == 1 and item["produces_token"] for item in decode)
+                and len(prefill) == 1 and prefill[0]["request_id"] == new_id
+                and prefill[0]["new_tokens"] == prefill_tokens
+                and prefill[0]["context_tokens"] == 0 and prefill[0]["produces_token"]):
+            matched.append(row)
+    if len(matched) != 1:
+        raise ValueError(f"目标混合轮次必须恰好出现一次，实际{len(matched)}")
+    return matched[0]
+
+
 def select_device(snapshot: str, requested_uuid: str, max_existing_memory_mib: int = 64) -> int:
     """核对UUID及显式允许的既有占用，返回旧vLLM支持的数字卡号。"""
     if type(max_existing_memory_mib) is not int or max_existing_memory_mib < 0:

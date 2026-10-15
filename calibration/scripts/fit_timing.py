@@ -85,6 +85,8 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--profile", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--device-label", default="4090-Qwen25-3B-vllm011-eager-worker-wall-fitted")
+    parser.add_argument("--scope", default="Qwen2.5-3B BF16 TP1 RTX4090 vLLM0.11 eager synchronized Worker wall")
     args = parser.parse_args()
     if args.output.exists() or args.profile.exists():
         raise ValueError("使用全新输出和profile，保留原始拟合身份")
@@ -104,7 +106,8 @@ def main() -> None:
     parameters = dict(zip(("dense_factor", "attention_factor", "batch_overhead_ms"), beta))
     profile = json.loads(args.config.read_text())
     profile["predictor"]["calibration"] = parameters
-    profile["predictor"]["device"]["name"] = "4090-Qwen25-3B-vllm011-eager-worker-wall-fitted"
+    # 标签只描述测量身份，不改变拟合公式；换卡后不能继续写成4090。
+    profile["predictor"]["device"]["name"] = args.device_label
     args.profile.parent.mkdir(parents=True, exist_ok=True)
     with args.profile.open("x", encoding="utf-8") as stream:
         json.dump(profile, stream, indent=2)
@@ -119,11 +122,12 @@ def main() -> None:
     report = {"schema_version": 1, "parameters": parameters, "training_shape_ids": ids,
               "objective": "equal_shape_relative_squared_error", "fit_shape_count": 12,
               "validation_shape_count": 4, "source_run_id": original["run_id"],
+              "gpu_uuid": original["gpu_uuid"],
               "raw_artifact_sha256": original["raw_artifact_sha256"],
               "model_config_sha256": original["model_config_sha256"],
               "software": original["software"], "effective_engine": original["effective_engine"],
               "timing_scope": original["timing_scope"], "profile_sha256": hashlib.sha256(args.profile.read_bytes()).hexdigest(),
-              "scope": "Qwen2.5-3B BF16 TP1 RTX4090 vLLM0.11 eager synchronized Worker wall",
+              "scope": args.scope,
               "shapes": evaluated}
     args.output.mkdir(parents=True)
     (args.output / "fit_report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")

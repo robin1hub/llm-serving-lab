@@ -1,0 +1,371 @@
+{
+  "schema_version": 1,
+  "parameters": {
+    "dense_factor": 0.7568788631690692,
+    "attention_factor": 3.060882675764624,
+    "batch_overhead_ms": 11.729456370363053
+  },
+  "training_shape_ids": [
+    "Prefill-B1-L128",
+    "Prefill-B1-L512",
+    "Prefill-B1-L2048",
+    "Decode-B1-L128",
+    "Decode-B1-L512",
+    "Decode-B1-L2048",
+    "Decode-B4-L128",
+    "Decode-B4-L512",
+    "Decode-B4-L2048",
+    "Decode-B8-L128",
+    "Decode-B8-L512",
+    "Decode-B8-L2048"
+  ],
+  "objective": "equal_shape_relative_squared_error",
+  "fit_shape_count": 12,
+  "validation_shape_count": 4,
+  "source_run_id": "a6000-qwen25-3b-pure-20261015-02",
+  "gpu_uuid": "GPU-208f7dc6-a184-3397-89f8-51d91e692d46",
+  "raw_artifact_sha256": {
+    "metadata.json": "6517a2a92d9b6b8c4a834a40064bbbc0585d2b587f2b8fe2b72a4e917be34e2c",
+    "capacity.json": "d7c4e3548510c4b6b920f4d4c2e59266dfbb6c3ef73118a9b23b1940b96d7494",
+    "batches.jsonl": "ab836b9800126d48ae98b5b08870e131eff81fa686069e6e111fe3019e085600",
+    "generation_checks.jsonl": "d67e3813c00c946ed35b191e859cf85a7aed36139e300ea354477c675e7f78a0",
+    "startup.log": "ec41e1ba74284703a87d3cb2c305b0d60f7b346c67165f2af73748a6f427ed0b",
+    "COMPLETE": "e82b479f0a2a15c023f0bce293f27990728ff00729c47650d5e1ab6f839aca8e"
+  },
+  "model_config_sha256": "27467e2fc311a7656c09a43ae9c3d408211e1f212bbddbc93c8596a06423826f",
+  "software": {
+    "vllm": "0.11.0",
+    "torch": "2.8.0",
+    "transformers": "4.56.1"
+  },
+  "effective_engine": {
+    "enable_chunked_prefill": true,
+    "enable_prefix_caching": false,
+    "gpu_memory_utilization": 0.5
+  },
+  "timing_scope": "worker_execute_wall",
+  "profile_sha256": "a471d55138c72911531508bcb783cd090ffe657b3f3bb55e40917be0c8005a0b",
+  "scope": "Qwen2.5-3B base BF16 TP1 RTX-A6000 vLLM0.11 eager synchronized Worker wall",
+  "shapes": [
+    {
+      "shape_id": "Prefill-B1-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 15.261251479387283,
+      "predicted_median_ms": 17.184653653612635,
+      "relative_error": 0.12603174627082248,
+      "sample_median_min_ms": 15.11240005493164,
+      "sample_median_max_ms": 15.461631119251251,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.5325826713048573,
+      "baseline_predicted_ms": 7.133373399039999
+    },
+    {
+      "shape_id": "Prefill-B1-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 32.94261358678341,
+      "predicted_median_ms": 34.42349604572151,
+      "relative_error": 0.04495339919028862,
+      "sample_median_min_ms": 32.1211963891983,
+      "sample_median_max_ms": 33.306773751974106,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.12560872205608864,
+      "baseline_predicted_ms": 28.804733992960003
+    },
+    {
+      "shape_id": "Prefill-B1-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 121.96075730025768,
+      "predicted_median_ms": 116.68958649082528,
+      "relative_error": -0.0432202203898685,
+      "sample_median_min_ms": 121.14069610834122,
+      "sample_median_max_ms": 123.26934188604355,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.01739843693487131,
+      "baseline_predicted_ms": 119.83883075584001
+    },
+    {
+      "shape_id": "Prefill-B1-L256",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 18.766751512885094,
+      "predicted_median_ms": 22.78303755235261,
+      "relative_error": 0.2140107219254206,
+      "sample_median_min_ms": 18.73311772942543,
+      "sample_median_max_ms": 18.901333212852478,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.23754295612772036,
+      "baseline_predicted_ms": 14.3088418816
+    },
+    {
+      "shape_id": "Prefill-B1-L1024",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 20,
+      "measured_median_ms": 61.54904328286648,
+      "predicted_median_ms": 59.479175816015065,
+      "relative_error": -0.033629563620326874,
+      "sample_median_min_ms": 61.32979691028595,
+      "sample_median_max_ms": 62.44856119155884,
+      "context_min": 0,
+      "context_max": 0,
+      "excluded": {
+        "warmup": 5,
+        "mixed_or_other_phase": 0,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.051547584056593654,
+      "baseline_predicted_ms": 58.37633880064
+    },
+    {
+      "shape_id": "Decode-B1-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 16.51499792933464,
+      "predicted_median_ms": 16.4169257328111,
+      "relative_error": -0.00593837171177225,
+      "sample_median_min_ms": 16.43209531903267,
+      "sample_median_max_ms": 16.565240919589996,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.6259764970949131,
+      "baseline_predicted_ms": 6.176997376
+    },
+    {
+      "shape_id": "Decode-B1-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 16.48574322462082,
+      "predicted_median_ms": 16.460254902331506,
+      "relative_error": -0.0015460826935146388,
+      "sample_median_min_ms": 16.346614807844162,
+      "sample_median_max_ms": 16.538679599761963,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.6244541075495005,
+      "baseline_predicted_ms": 6.191153152
+    },
+    {
+      "shape_id": "Decode-B1-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 620,
+      "measured_median_ms": 16.451913863420486,
+      "predicted_median_ms": 16.633571580413122,
+      "relative_error": 0.011041737666554141,
+      "sample_median_min_ms": 16.33339747786522,
+      "sample_median_max_ms": 16.94166287779808,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 160,
+        "mixed_or_other_phase": 20,
+        "partial_batch": 0
+      },
+      "baseline_relative_error": -0.6202401551656899,
+      "baseline_predicted_ms": 6.247776256
+    },
+    {
+      "shape_id": "Decode-B4-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 18.090144731104374,
+      "predicted_median_ms": 16.466227850120482,
+      "relative_error": -0.08976804249618375,
+      "sample_median_min_ms": 18.020164221525192,
+      "sample_median_max_ms": 18.168414011597633,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.6576163105345216,
+      "baseline_predicted_ms": 6.193770495999999
+    },
+    {
+      "shape_id": "Decode-B4-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 601,
+      "measured_median_ms": 18.056615255773067,
+      "predicted_median_ms": 16.639544528202098,
+      "relative_error": -0.07847931118308027,
+      "sample_median_min_ms": 17.24313199520111,
+      "sample_median_max_ms": 18.181772902607918,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 39,
+        "partial_batch": 19
+      },
+      "baseline_relative_error": -0.6538446706947681,
+      "baseline_predicted_ms": 6.2503936
+    },
+    {
+      "shape_id": "Decode-B4-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 580,
+      "measured_median_ms": 17.24858768284321,
+      "predicted_median_ms": 17.33281124052857,
+      "relative_error": 0.004882924865154958,
+      "sample_median_min_ms": 17.193686217069626,
+      "sample_median_max_ms": 17.37850531935692,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 170,
+        "mixed_or_other_phase": 60,
+        "partial_batch": 40
+      },
+      "baseline_relative_error": -0.624497603218702,
+      "baseline_predicted_ms": 6.476886016
+    },
+    {
+      "shape_id": "Decode-B8-L128",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.308883368968964,
+      "predicted_median_ms": 16.531888782280348,
+      "relative_error": -0.044889931379490156,
+      "sample_median_min_ms": 17.25139655172825,
+      "sample_median_max_ms": 17.37174578011036,
+      "context_min": 128,
+      "context_max": 158,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.640871687243319,
+      "baseline_predicted_ms": 6.21611008
+    },
+    {
+      "shape_id": "Decode-B8-L512",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 600,
+      "measured_median_ms": 17.263484187424183,
+      "predicted_median_ms": 16.878522138443586,
+      "relative_error": -0.02229920940646657,
+      "sample_median_min_ms": 17.20002107322216,
+      "sample_median_max_ms": 17.47874915599823,
+      "context_min": 512,
+      "context_max": 542,
+      "excluded": {
+        "warmup": 165,
+        "mixed_or_other_phase": 40,
+        "partial_batch": 20
+      },
+      "baseline_relative_error": -0.633367388686769,
+      "baseline_predicted_ms": 6.329356288
+    },
+    {
+      "shape_id": "Decode-B8-L2048",
+      "split": "fit",
+      "repetitions": 20,
+      "worker_rounds": 540,
+      "measured_median_ms": 17.246516421437263,
+      "predicted_median_ms": 18.26505556309653,
+      "relative_error": 0.05905767383801819,
+      "sample_median_min_ms": 17.231404781341553,
+      "sample_median_max_ms": 17.910409718751907,
+      "context_min": 2048,
+      "context_max": 2078,
+      "excluded": {
+        "warmup": 180,
+        "mixed_or_other_phase": 100,
+        "partial_batch": 80
+      },
+      "baseline_relative_error": -0.6067413874044957,
+      "baseline_predicted_ms": 6.78234112
+    },
+    {
+      "shape_id": "Decode-B2-L256",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 603,
+      "measured_median_ms": 17.268287017941475,
+      "predicted_median_ms": 16.462283497054152,
+      "relative_error": -0.04667536044831189,
+      "sample_median_min_ms": 17.093360424041748,
+      "sample_median_max_ms": 17.86002703011036,
+      "context_min": 256,
+      "context_max": 286,
+      "excluded": {
+        "warmup": 163,
+        "mixed_or_other_phase": 37,
+        "partial_batch": 17
+      },
+      "baseline_relative_error": -0.641421417100227,
+      "baseline_predicted_ms": 6.192037888
+    },
+    {
+      "shape_id": "Decode-B2-L1024",
+      "split": "validation",
+      "repetitions": 20,
+      "worker_rounds": 603,
+      "measured_median_ms": 17.129835672676563,
+      "predicted_median_ms": 16.63560017513577,
+      "relative_error": -0.028852319834517526,
+      "sample_median_min_ms": 17.09861494600773,
+      "sample_median_max_ms": 17.45542325079441,
+      "context_min": 1024,
+      "context_max": 1054,
+      "excluded": {
+        "warmup": 163,
+        "mixed_or_other_phase": 37,
+        "partial_batch": 17
+      },
+      "baseline_relative_error": -0.6352176920198302,
+      "baseline_predicted_ms": 6.2486609920000005
+    }
+  ]
+}

@@ -192,4 +192,6 @@ configs/calibrated_qwen25_3b.json是可选测量参数，来源/条件/范围在
 
 analyze_mixed.py只接受actual items同时有P/D、非预热、合法Worker计时/无恢复；冻结纯P/D profile SHA和模型/软件/有效参数检查，整批一次estimate。汇总对原投递案例等权，案例内按生成重复中位数，另报实际P/D人数/P token档位及重复数；原case标签不当实际成员数。219轮/139重复/7案例沿用系数误差21.77%，不保证所有混合类型或当前1P调度组合，详见第19章。
 
-专门1P+多个D采集器未通过GPU运行，只保留ignored草稿，无新正式入口/核心机制。用户已停止替代权重跨机拷贝，不能自动恢复或加载partial模型。没有请求级配对实验，不从离线执行成本声称TTFT/ITL/吞吐收益。
+用户已停止替代权重跨机拷贝，不能自动恢复或加载partial模型。随后用户授权直接在A6000测试；正式collect_mixed.py已通过GPU最小试跑，新增launcher --mixed入口。先让驻留请求进入纯Decode，再注入一个完整Prefill，不修改真实vLLM Scheduler。batch_records.match_controlled_mixed按请求身份/完整P/单token D验收恰好一个目标轮；输出数不符或有限step不能结束则失败，无COMPLETE。analyze_mixed对整个矩阵独立验收，再沿用冻结的同GPU纯P/D参数；fit_timing增加来源标签参数，拟合公式不变。详见第20章。
+
+没有请求级配对实验，不从离线执行成本声称TTFT/ITL/吞吐收益。模拟器内核、Predictor公式和默认配置不变；A6000 profile与4090 profile分别保存，不能跨硬件套用精度声明。
