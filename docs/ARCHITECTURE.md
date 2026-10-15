@@ -1,6 +1,6 @@
 # 当前架构与代码契约
 
-本文件是当前实现地图，供用户和后续 AI 快速定位。更新日期2026-10-15。当前已支持多个独立Mix worker与共享事件堆，详细学习说明见第21章，后续路线见ROADMAP.md。单卡旧接口保留；P/D交接尚未实现。第15–20章补充按历史阶段追加，早期“未校准/未采集”的说明不代表当前状态；限定范围实测来源以第18/20章与摘要报告为准。
+本文件是当前实现地图，供用户和后续 AI 快速定位。更新日期2026-10-15。当前支持多个独立Mix worker及固定1P1D/FIFO链路，学习说明见第21/22章，路线见ROADMAP.md。单卡旧接口保留；目标容量不足的交接等待协议尚未实现。第15章以后的补充按历史阶段追加，早期未实现说明以最新章节为准；实测范围见第18/20章及摘要报告。
 
 ## 模块地图
 
@@ -37,6 +37,7 @@ flowchart LR
 | simulator/scheduler.py | SchedulerProfile、约束、快照、计划、只读选批、完成反馈、轮转纯函数 | 不分配KV、不生成token、不推进时间 |
 | simulator/engine.py | 持有队列与进度、提交计划、处理事件与完成 | 不解析原始文本或拟合真实耗时 |
 | simulator/worker.py | 不可变WorkerConfig、独立卡身份和资源输入校验 | 不保存动态队列、不路由、不传输KV |
+| simulator/handoff.py | 固定PD角色/链路配置、FIFO传输与目标KV提交/源释放 | 不替代Scheduler、不做目标容量等待/PD抢占或带宽竞争 |
 | simulator/memory_budget.py | 设备/模型/预留参数、KV字节及整块容量换算 | 不连接服务器、不部署模型、不管理块生命周期 |
 | simulator/kv_cache.py | KVConfig/Block/Table/Reservation、单GPU池、只读准入、事务与冻结快照 | 不选原始候选、不计算token内容、不进行网络传输 |
 | simulator/recovery.py | 独立策略配置、只读受害者选择、暂停/FIFO恢复与进展保护状态 | 不分配KV、不预测耗时、不决定最终输出长度 |
@@ -52,15 +53,19 @@ engine._drive_workers持有本次运行唯一future最小堆、sequence和全局
 
 每次运行创建独立 Scheduler，记录 last_completed_phase。decide 仍只读候选与阶段状态；完成事件通过 on_batch_completed 更新该实例的上轮阶段。配置方案不可变，可复用方案但不共享 Scheduler 的运行状态。
 
-未来事件_ScheduledEvent携带worker_id，按(time_ms, priority, sequence)排序，priority为arrival=0、complete=1、wakeup=2；worker_id不参与排序。同刻所有卡的全部到达/完成发生后才选批。complete携带启动时的BatchPlan和本卡KVReservation，不重新选人，不修改其他卡busy。
+未来事件_ScheduledEvent携带worker_id，按(time_ms, priority, sequence)排序；arrival=0，complete/transfer_complete=1，wakeup/transfer_start=2；worker_id不参与排序。同刻所有卡的全部到达/完成发生后才选批或启动传输。complete携带启动时的BatchPlan和本卡KVReservation，不重新选人，不修改其他卡busy。transfer_start仅唤醒链路，FIFO决定真正传输成员。
 
 ## 当前配置契约
 
-推荐实验顶层为workload/timing/scheduler_profiles/workers，多卡另含routing。方案含prefill_algorithm、decode_algorithm、mix_algorithm和constraints；支持fcfs_chunked、round_robin与prefill_first/decode_first/alternating/mixed_decode_first。约束max_batch_requests/max_tokens_per_batch/prefill_chunk_tokens为可选正整数或null。workers按方案名引用，id/role/scheduler_profile必填；当前完整运行只接受Mix，Scheduler单独仍可校验P/D槽，但完整P/D角色明确报错。
+推荐实验顶层为workload/timing/scheduler_profiles/workers；独立多Mix另含routing，固定1P1D另含pd。方案含prefill_algorithm、decode_algorithm、mix_algorithm和constraints；支持fcfs_chunked、round_robin与prefill_first/decode_first/alternating/mixed_decode_first。约束max_batch_requests/max_tokens_per_batch/prefill_chunk_tokens为可选正整数或null。无pd时仅接受Mix；pd必须恰好一P一D、不同GPU，两端独立KV且recovery=block。P/D只要求对应阶段算法槽，不要求Mix槽。
 
 多个worker时gpu_id必填且各卡唯一，worker.id也唯一。worker可设置自己的timing/predictor/kv_cache/recovery；顶层耗时作为默认，子级timing替换父级predictor，子级roofline替换父级timing。多卡禁止顶层KV/recovery，必须逐卡指定；KV.gpu_id必须与worker.gpu_id一致。每卡可人工设块数或引用独立显存profile，路径与结构校验复用原逻辑。未启用KV就无容量约束。
 
-routing只支持policy=fixed与assignments对象，恰好覆盖所有请求并引用有效worker。多卡不配置routing明确报错；单卡省略时全部归唯一worker。固定归属不会自动迁移或负载均衡。Experiment保留旧单卡字段为首worker的兼容视图，多卡执行必须读取workers/assignments，不能误用首卡资源处理所有请求。
+routing只支持policy=fixed与assignments对象，恰好覆盖所有请求并引用有效worker。独立多Mix不配置routing明确报错；单卡省略时全部归唯一worker。固定归属不会自动迁移或负载均衡。Experiment保留旧单卡字段为首worker兼容视图，多卡执行必须读取workers/assignments，PD还需读取pd_config。
+
+pd={prefill_worker,decode_worker,link}与routing互斥，全部请求自动先到P。link={bandwidth_bytes_per_s,latency_ms,kv_bytes_per_token}，带宽/载荷正、延迟非负。roofline与显存profile存在时核对KV字节数/结构，两端roofline模型需相同。simulate_pd使用同一个_drive_workers事件内核，不另建事件循环。
+
+PD交接后D接收原请求信息/首开始/已完成输入，继续引用原token_times和records历史；P用departed排除已移交请求的完整结果，不再参与P的候选。最终完整Result只在D（或单输出时P）汇总一次。每卡队列和资源仍独立，不共享Scheduler/Predictor/KV状态。
 
 旧 workload/scheduler/timing JSON 仍兼容，scheduler.policy 转换为 Mix 槽；新旧写法禁止混用，constraints 不允许 policy。Python 的 SchedulerConfig.policy 保留作兼容入口，提供 profile 后阶段选择以 profile.mix_algorithm 为准。未知字段/算法、错误引用均报错，不静默降级。第9章有完整配置与选批流程。
 
@@ -96,7 +101,7 @@ TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所
 
 ## 明确尚未实现
 
-共享KV/COW/传输保护、模拟容量公式与实际池大小的系统对齐、CPU交换、SLO优化、P→D交接/传输、动态路由、TP/PP、失败/取消/截止终止。已有4090/A6000限定范围耗时校准，但多卡请求级精度未验证；真实模型执行仅用于独立采集工具，不属于模拟内核。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
+共享KV/COW/通用传输pin、模拟容量公式与实际池大小的系统对齐、CPU交换、SLO优化、交接目标容量等待/PD抢占、多P多D、动态路由、TP/PP、失败/取消/截止终止。已有最小固定1P1D传输，但未模拟共享带宽或真实链路争用；多卡请求级精度未验证。真实模型执行仅用于独立采集工具。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
 
 ## 验证与交接入口
 
@@ -107,7 +112,7 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF/本页/ROADMAP/第21章。当前完成多卡路线第1阶段，用户理解尚未确认，不自动继续P/D交接。test_multi_worker验证并发/顺序/容量/恢复隔离和报告，test_predictor验证公式与上下文。只在本教学项目工作，不修改相邻师兄项目或全局环境。资产和生成结果被Git忽略，本地存在不代表新机器能直接取得。
+下一AI先确认git status，读取HANDOFF/本页/ROADMAP/第22章。当前完成路线第2阶段，用户理解尚未确认，不自动继续目标容量等待。test_pd验证交接/载荷/复制计算重叠/边界，test_multi_worker验证独立卡，test_predictor验证公式。只在教学项目工作，不修改师兄项目或全局环境。资产/生成结果被Git忽略。
 
 ## 第11章混合执行补充
 
@@ -117,9 +122,9 @@ test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配
 
 可选顶层kv_cache要求gpu_id/block_tokens，必须且只能另选total_blocks或memory_profile。前者直接配正整数块数，后者按独立profile换算。省略禁用，null不合法。一池一个GPU，解析后KVConfig仍是设备身份/正整数块数/块token数。
 
-BlockPool独占活块、已提交请求块表、在途事务和ID。KVBlock保存设备/块ID、逻辑页序号、全局token有效范围、Reserved/Populating/Ready、request_refs和execution_owner；记录冻结且替换更新。块ID单调不复用，GPU+ID一起解释身份。当前每块仅一个请求引用；没有共享/COW/跨卡副本或传输接口。
+BlockPool独占活块、已提交请求块表、在途事务和ID。KVBlock保存设备/块ID、逻辑页序号、有效范围、Reserved/Populating/Ready、request_refs和execution_owner；记录冻结且替换更新。块ID单调不复用，GPU+ID一起解释身份。当前每块仅一个请求引用，无共享/COW；第22章控制器通过两个独立池实现最小跨卡复制，单池本身不管理源/目标副本映射。
 
-admit只读删减候选，先留可增长Decode，剩余空间缩小Prefill。无成员时内核尝试过滤掉容量阻塞Decode的回退候选；不跳过FCFS Prefill队首。预测针对准入后计划。reserve先全量校验，创建新块并保护写尾块；begin_populating启动填充；complete才提交有效范围/请求表并解除执行保护；request完成后解除引用回收。rollback删除新块、还原旧块，已提交表不变。事务只能完成/回滚一次，单池当前最多一在途事务。
+admit只读删减候选，先留可增长Decode，剩余空间缩小Prefill。无成员时内核尝试可增长Decode回退；不跳过FCFS Prefill队首。reserve先全量校验，创建新块并保护写尾块；begin_populating启动填充；complete才提交范围/请求表并解除保护；完成请求释放引用。rollback只还原本笔事务。第22章允许同池不同请求并行事务，以支持拷入B与计算A；同一请求重叠写入在分配前拒绝。单卡执行仍一次一个batch，不因此产生同卡计算重叠。
 
 必须保持：活块数不超过total_blocks，空闲数不负；已提交表中的块存在/有请求引用，逻辑范围覆盖cached_tokens；未完成事务不增加cached_tokens；释放执行中的请求报错。Reserved/Populating映射在reservation.writes中，快照同时导出reservations。碎片仅统计Ready块的尾部空位，峰值包括曾预留块。
 
@@ -208,3 +213,13 @@ analyze_mixed.py只接受actual items同时有P/D、非预热、合法Worker计�
 某卡无可准入计划只退出该次dispatch，全局堆继续运行其他卡；全局堆耗尽后汇总pending，不能提前因一张卡blocked终止整个实验。各池的块ID允许相同，但GPU+块ID一起解释身份，不跨卡合并KV容量。所有卡之间目前不计共享CPU/链路资源干扰。
 
 two_mix_workers示例A在卡0输出8/10/12ms、B在卡1输出4/6ms；全局窗口12ms。相同路由固定、结果确定性可复现。93项测试91通过2分词依赖跳过，9项新增多卡验证；基础/KV/重算三个旧CLI JSON全量不变。路线第1阶段完成，不自动实现后续传输。第21章含数据归属表、流程、配置覆盖、状态边界、输出schema和阅读标记。
+
+## 第22章：固定1P1D最小交接契约
+
+PD模式复用同一全局堆。P最终Prefill完成先产首token；若已满足目标则本卡完成释放，不传输。否则HandoffController接收原请求历史、标记P.departed、FIFO排队，传输开始时在D池完整reserve/begin_populating；传输完成先提交目标Ready/请求表，再释放源KV、加入D.active并唤醒两端。D忙时不打断当前batch。源生命周期由固定流程/禁止PD抢占保证，尚无通用pin/COW。
+
+载荷=已处理输入KV token数×kv_bytes_per_token，不包含刚生成首token，不包含尾页空位；耗时=latency_ms+payload_bytes/bandwidth_bytes_per_s×1000。串行链路可与两卡计算重叠，允许不同请求在D池并行写入；同一请求写入事务互斥。传输不调用Predictor、不增加计算steps，单独保存TransferRecord。PD请求输出的worker_id为最终完成卡，worker_path记录路径；workers的produced_output_tokens是本卡实际产出，summary仍按完整已完成请求汇总。
+
+开始拷入若目标容量不够明确ValueError，未实现目标等待队列/PD抢占；D后续增长沿用原准入，可能blocked。P若因保留源KV而容量受阻，传输释放后会被唤醒。目标Ready只在完成事件提交，源在此前持续保留。PD双方需独立KV池/相容模型，独立多Mix模式不接受P/D角色，pd与routing互斥。链路与多卡请求级结果均未实测校准。
+
+one_p_one_d示例：P0–8首token8，4096bytes传输8–13，D13–15/15–17，输出8/15/17，ITL7/2ms。106测试104通过2跳过（13项PD），basic/kv_blocks/recompute/two_mix_workers四个CLI完整JSON均保持。第22章含状态/时序图、结构表、手算和边界，路线第2阶段完成；下一步先讨论结果，不自动推进第3阶段。

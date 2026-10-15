@@ -137,8 +137,10 @@ class BlockPool:
         # 【重点2：先完整校验再修改】容量失败不会留下半个batch的分配。
         if not plan.items or len(set(plan.request_ids)) != len(plan.items):
             raise ValueError("KV预留要求非空且请求不重复")
-        if self._transactions:
-            raise ValueError("当前单GPU池只允许一个在途事务")
+        # 【交接重点】复制新请求的KV可与其他请求Decode并行；同一请求仍只能一笔写入。
+        writing = {write.request_id for saved, _ in self._transactions.values() for write in saved.writes}
+        if writing.intersection(plan.request_ids):
+            raise ValueError("同一请求KV已有在途写入事务")
         required = 0
         for item in plan.items:
             if type(item.token_count) is not int or item.token_count <= 0:

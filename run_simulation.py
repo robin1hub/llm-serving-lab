@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from simulator.config import Experiment, load_experiment
-from simulator.engine import ClusterRun, EventRun, simulate_events, simulate_workers
+from simulator.engine import ClusterRun, EventRun, simulate_events, simulate_workers, simulate_pd
 from simulator.metrics import print_summary, summarize
 from simulator.predictor import build_predictor
 
@@ -91,10 +91,13 @@ def cluster_report(experiment: Experiment, run: ClusterRun) -> dict:
             report.pop(key)
         report["worker"]["gpu_id"] = config.gpu_id
         report["busy_time_ms"] = sum(step.end_ms - step.start_ms for step in worker_run.run.batch_run.steps)
+        if run.pd_config is not None:
+            report["produced_output_tokens"] = sum(item.produces_token for estimate in worker_run.run.estimates
+                                                   for item in estimate.items)
         workers.append(report)
     by_id = {row["request"]["request_id"]: row for row in requests}
-    return {
-        "schema_version": 2, "execution_mode": "independent_mix_workers", "status": run.status,
+    report = {
+        "schema_version": 2, "execution_mode": "fixed_1p1d" if run.pd_config else "independent_mix_workers", "status": run.status,
         "summary_scope": "completed_requests_only" if run.status == "blocked" else "all_requests",
         "config_path": str(experiment.config_path), "workload_path": str(experiment.workload_path),
         "workload_metadata": experiment.workload_metadata,
@@ -107,6 +110,15 @@ def cluster_report(experiment: Experiment, run: ClusterRun) -> dict:
         "plans": [asdict(plan) for plan in run.plans],
         "estimates": [asdict(estimate) for estimate in run.estimates], "trace": run.trace,
     }
+    if run.pd_config is not None:
+        report["pd"] = asdict(run.pd_config)
+        report["routing"]["policy"] = "fixed_1p1d"
+        report["transfers"] = [asdict(record) for record in run.transfers]
+        for row in report["requests"]:
+            row["worker_path"] = ([run.pd_config.prefill_worker, run.pd_config.decode_worker]
+                                  if row["worker_id"] == run.pd_config.decode_worker
+                                  else [run.pd_config.prefill_worker])
+    return report
 
 
 def main() -> None:
@@ -119,7 +131,9 @@ def main() -> None:
     try:
         # 【重点 1】文件转为请求对象；事件内核继续使用原来的函数。
         experiment = load_experiment(args.config)
-        if len(experiment.workers) > 1:
+        if experiment.pd_config is not None:
+            run = simulate_pd(experiment.requests, experiment.workers, experiment.pd_config)
+        elif len(experiment.workers) > 1:
             run = simulate_workers(experiment.requests, experiment.workers, dict(experiment.assignments))
         else:
             run = simulate_events(experiment.requests, experiment.timing, policy=experiment.policy,
@@ -140,6 +154,11 @@ def main() -> None:
     for step in (() if args.summary else run.batch_run.steps):
         owner = f"[{step.worker_id}/{step.gpu_id}] " if isinstance(run, ClusterRun) else ""
         print(f"{owner}{step.start_ms:g}–{step.end_ms:g}ms {step.phase} {list(step.request_ids)}")
+    if isinstance(run, ClusterRun) and not args.summary:
+        for transfer in run.transfers:
+            print(f"[KV {transfer.source_worker}→{transfer.target_worker}] "
+                  f"{transfer.start_ms:g}–{transfer.end_ms:g}ms {transfer.request_id}，"
+                  f"{transfer.payload_bytes}字节，链路等待{transfer.start_ms - transfer.ready_ms:g}ms")
     if not args.summary:
         print("计划工作量（本轮处理 token 数；Prefill/Recompute range_start 是序列偏移）：")
         for index, plan in enumerate(run.plans):

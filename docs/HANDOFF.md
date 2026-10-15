@@ -2,18 +2,18 @@
 
 更新时间：2026-10-15（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
 
-最新结果：多卡路线第1阶段已实现，支持多个独立Mix worker、共享事件堆和固定请求归属；第21章、ROADMAP与本页末尾为当前进度。A6000限定范围校准仍保留第20章。下方历史阶段关于“单卡限定/尚未拟合/无新GPU结果/采集器仅草稿”的说明已由后续记录取代。
+最新结果：路线第2阶段固定1P1D已实现，P产生首token后经FIFO链路交接KV到D；源保留、目标Ready、源释放边界已验证，但目标容量不足的等待/PD抢占尚未实现。第22章、ROADMAP与本页末尾为当前进度。第21章独立多Mix和第20章A6000校准保留；旧阶段未实现说明以最新记录为准。
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → ROADMAP.md → 第21章21-multi-workers.md → 对应代码和测试。校准背景见第18–20章。LEARNING_LOG保留历史，不能当作当前未实现列表。README是运行/章节索引。
+AGENTS.md → 本页 → ARCHITECTURE.md → ROADMAP.md → 第22章22-fixed-pd.md（第21章是多卡基础）→ 对应代码和测试。校准背景见第18–20章。LEARNING_LOG保留历史，不能当作当前未实现列表。
 
 用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，已完成限定范围拟合和新形状验证，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 
 ## 当前已实现
 
 - 共享到达/完成/唤醒事件堆，按worker_id分发；每卡busy阻止本卡重叠，不同卡可并行；候选快照/计划冻结，Scheduler只读选批。
-- 独立scheduler_profiles算法槽与worker按名字引用；旧policy兼容，禁止混用。支持多个完整Mix worker，P/D方案可定义校验，但完整P/D运行仍等待交接机制。多卡用显式固定routing，逐卡资源独立。
+- 独立scheduler_profiles算法槽与worker按名字引用；旧policy兼容，禁止混用。独立多Mix用显式固定routing；固定1P1D用pd配置且两端KV/recovery=block。P/D只需对应阶段算法槽，逐卡资源独立。
 - Prefill FCFS分块、Decode轮转；人数/token/chunk限制正整数或null。Mix支持严格P优先、严格D优先、alternating和mixed_decode_first，后者先D、剩预算最多一个P块。
 - 内核按成员阶段提交/完成，整批同一完成时刻；中间P块无输出，最终块产首token；只轮转Decode成员。
 - 独立Predictor：默认teaching保持旧公式，Mixed为P线性耗时加一次D轮时间；可选未校准roofline，两组max计算/访存后相加与开销。模型/算力/带宽/系数可配，结果保存明细。Decode上下文为input+generated-1，无未来输出目标输入。
@@ -24,7 +24,7 @@ AGENTS.md → 本页 → ARCHITECTURE.md → ROADMAP.md → 第21章21-multi-wor
 
 ## 当前验证与例子
 
-最新93测试中91通过、2个分词集成因系统Python缺依赖跳过；9个新增多卡测试守住并发/同刻顺序/独立资源/阻塞/恢复/配置/CLI。基础、KV和重算三个旧CLI完整JSON与改动前逐项相同，保存在output/multi-worker-before及output/multi-worker-after-*.json。更早ShareGPT禁用KV回归结果仍保留；test_kv_cache继续验证身份/生命周期/冻结、页边界、容量回滚、回退和blocked导出。
+最新106测试中104通过、2项分词依赖缺失跳过；13项新增PD测试覆盖KV交接/并行事务/链路/上下文/统计，原9项多卡及全部单卡测试继续通过。第1阶段基础/KV/重算旧CLI JSON对照保留在output/multi-worker-before和after；本轮新增四例回归见末尾。test_kv_cache继续验证生命周期/冻结、页边界、容量回滚和blocked导出。
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -38,7 +38,7 @@ python3 run_simulation.py --config configs/kv_blocked.json --output output/kv_bl
 
 ## 尚未实现
 
-P→D交接/传输、动态路由、共享KV引用接口、写时复制、传输保护/跨卡副本、模拟容量公式与实测池大小的系统对齐、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、TP/PP和跨模型/硬件泛化精度验证。已经有多个独立Mix worker与4090/A6000限定范围耗时拟合，不代表完整分布式系统或全部校准完成。当前每个独立池最多一在途事务。
+目标容量不足的交接等待/PD抢占、动态路由、多P多D、共享KV引用、COW、通用传输pin、容量公式系统校准、外部碎片地址布局、未来增长预留、CPU交换、SLO准入、TP/PP及跨模型/硬件精度。已有固定1P1D与最小副本提交/源释放，不代表完整传输保护/恢复协议；池内允许不同请求并行写入，同一请求仍禁止重叠写。多卡请求级及链路未实测校准。
 
 ## 本地环境
 
@@ -199,3 +199,21 @@ run_simulation.py单卡仍schema1且内容保持，多卡schema2：全局summary
 验证：93项测试中91通过、2项分词依赖缺失跳过，新增tests/test_multi_worker.py九项，覆盖并发/单卡互斥、同刻全局事件顺序、独立KV与恢复/交替状态、不同速度、空负载/空闲卡、固定归属、错误配置、schema2与blocked CLI。改动前后basic/kv_blocks/recompute三个CLI完整JSON逐项一致，ignored output/multi-worker-before/*.json及output/multi-worker-after-*.json保留证据。所有真实采集器/校准profile和默认示例未更改。
 
 学习入口第21章：结果手算、全局/每卡状态表、事件流程图、配置继承与拒绝规则、KV阻塞、输出schema、五处代码阅读顺序和两个练习。README/ARCHITECTURE/ROADMAP/LEARNING_LOG同步。核心阅读标记worker.py重点1、engine运行现场重点2/驱动器重点3、config重点4；不必一次读完dispatch的KV/恢复分支。两份原有8B草稿仍未提交，未修改师兄项目、服务器环境或全局依赖。
+
+## 最新：固定1P1D与FIFO传输完成（2026-10-15）
+
+用户确认继续第2阶段“来做一下试试”，当前步骤已完成，不自动进入目标容量等待。新增simulator/handoff.py：LinkConfig/PDConfig/TransferRecord与HandoffController，链接由bandwidth_bytes_per_s、latency_ms、kv_bytes_per_token配置。两卡一P一D、不同GPU、各自启用KV，PD恢复只允许block；pd与routing互斥，全部请求先到P。无pd的多worker仍只接受Mix，旧Python/JSON入口保留。
+
+engine增加simulate_pd，仍用_drive_workers的一个堆。计算complete与transfer_complete为priority1，wakeup/transfer_start为2，同刻全部完成后才选批/开传。P最终Prefill产首token后：单输出直接完成；否则向控制器交接原请求信息/首开始/输入进度，D继续引用原token_times/records，P.departed排除该请求的完整结果，最终只在D汇总一份端到端结果。中间chunk不触发传输。P可继续处理其他输入，但源KV保留到交接完成。
+
+控制器FIFO排队：开始拷入时检查D完整输入容量、reserve/begin_populating目标块；目标尚不可Decode。载荷为源cached_tokens（完整输入，不含刚生成首token）×每token字节数，不含页空位；耗时固定延迟+bytes/带宽×1000。完成事件先target.complete提交Ready/表，再source.release_request释放源，最后加入D.active；唤醒可能受源容量阻塞的P与D。D忙时新请求仍排队。target容量不足显式ValueError，不伪造完成/无条件接入，完整目标等待/重试/抢占协议留第3阶段。已进D后的增长仍可能blocked。
+
+必要底层改动：BlockPool允许同池不同请求的多笔写入，以支持拷入B与计算A重叠；reserve在任何变更前检查所有在途writes的request_id，同一请求写入冲突拒绝。各事务独立commit/rollback，执行所有者字段复用为写入事务保护；尚无共享块/COW。PD禁抢占且P.departed不再参与候选，源保留由当前流程保证，不代表已实现通用transfer-pin。
+
+LinkConfig校验单位/有限正耗时，PDConfig核对角色、资源、KV字节数/结构和两端roofline模型相同。教学示例1024bytes/token是假设；实际Qwen2.5-3B BF16需36864bytes/token，配置roofline/显存profile时必须一致。不模拟链路/计算共享HBM/PCIe/CPU争用，不声明真实双卡精度。
+
+configs/one_p_one_d.json引用workloads/pd_request.json，A输入4输出3、P2ms/token、D2ms/轮；两卡各16块×2token，链路1024000bytes/s+1ms，每token载荷1024bytes。P0–8首token8，KV4096bytes在8–13传完，D13–15、15–17，输出8/15/17，ITL7/2。带宽减半输出8/19/21。两请求A4/3+B2/2时，P0–8/8–12，传输8–13/13–16（B等1ms），A输出8/15/17，B12/19，验证D计算与复制重叠。
+
+多卡schema2增加execution_mode=fixed_1p1d、pd、transfers、requests.worker_path；worker_id是最终完成者，routing.assignments是初始P归属。各worker的produced_output_tokens记录实际生成（例子P1/D2），summary仍按本卡保存的完整完成请求统计，不能把P.summary=0误读为未执行。全局输入/输出只计一次。计算steps与transfers分开，CLI另打印KV区间；output/one_p_one_d.json保留完整结果。
+
+验证106测试104通过2分词依赖跳过，新增tests/test_pd.py十三项：手算/首开始首token/context、目标Populating/Ready与源释放、带宽、FIFO/复制计算并行、同刻完成、源容量唤醒、单输出/空负载、chunk、目标不足拒绝、并行事务原子性/回滚、模型字节、CLI。旧basic/kv_blocks/recompute/two_mix_workers四例JSON与此前完整逐项一致，新输出在output/pd-regression。第22章状态/时序图、结构/代码阅读点、手算、多请求表与限制已同步README/ARCHITECTURE/ROADMAP。用户理解待确认，下一步先讲解本章，再讨论第3阶段目标容量等待。未访问服务器、未改师兄或全局依赖；两份8B草稿仍保留未提交。

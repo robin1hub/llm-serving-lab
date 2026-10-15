@@ -1,0 +1,18 @@
+{
+  "workload": {"path": "../workloads/pd_request.json"},
+  "timing": {"prefill_ms_per_input_token": 2, "decode_ms_per_step": 2},
+  "scheduler_profiles": {
+    "p_default": {"prefill_algorithm": "fcfs_chunked", "constraints": {"prefill_chunk_tokens": 4}},
+    "d_default": {"decode_algorithm": "round_robin", "constraints": {"max_batch_requests": 4}}
+  },
+  "workers": [
+    {"id": "p0", "gpu_id": "gpu_0", "role": "P", "scheduler_profile": "p_default",
+     "kv_cache": {"gpu_id": "gpu_0", "total_blocks": 16, "block_tokens": 2}},
+    {"id": "d0", "gpu_id": "gpu_1", "role": "D", "scheduler_profile": "d_default",
+     "kv_cache": {"gpu_id": "gpu_1", "total_blocks": 16, "block_tokens": 2}}
+  ],
+  "pd": {
+    "prefill_worker": "p0", "decode_worker": "d0",
+    "link": {"bandwidth_bytes_per_s": 1024000, "latency_ms": 1, "kv_bytes_per_token": 1024}
+  }
+}

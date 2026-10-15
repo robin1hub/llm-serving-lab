@@ -6,6 +6,7 @@ import heapq
 from typing import Callable
 
 from .worker import WorkerConfig
+from .handoff import HandoffController, PDConfig, TransferRecord
 from .models import BatchRun, BatchStep
 from .models import Event, Request, Result, Timing, _validate_time
 from .scheduler import BatchPlan, Policy, ReadyTask, Scheduler, SchedulerConfig, SchedulerProfile, SchedulingSnapshot, rotate_after_completion
@@ -76,6 +77,8 @@ class ClusterRun:
     assignments: tuple[tuple[str, str], ...]
     status: str
     pending_request_ids: tuple[str, ...]
+    pd_config: PDConfig | None = None
+    transfers: tuple[TransferRecord, ...] = ()
 
 
 # schedule回调只负责把某张卡的未来通知放进全局堆，不推进时间。
@@ -89,7 +92,7 @@ class _WorkerRuntime:
                  schedule_event: Schedule, predictor: Predictor | None = None) -> None:
         self.config = config
         self._schedule_event = schedule_event
-        self.scheduler = Scheduler(config.scheduler_profile.constraints, profile=config.scheduler_profile)
+        self.scheduler = Scheduler(config.scheduler_profile.constraints, profile=config.scheduler_profile, role=config.role)
         self.duration_predictor = (predictor if predictor is not None
                                    else build_predictor(config.predictor_settings, config.timing))
         self.kv_pool = BlockPool(config.kv_config) if config.kv_config is not None else None
@@ -110,6 +113,8 @@ class _WorkerRuntime:
         self.estimates: list[BatchEstimate] = []
         self.trace: list[str] = []
         self.busy = False
+        self.departed: set[str] = set()
+        self.on_prefill_ready: Callable[[str, float], None] | None = None
         self.wakeup_pending = False
         # 这是当前事件的时间副本；唯一时间来源仍是全局heap弹出的事件。
         self.now_ms = 0.0
@@ -228,7 +233,12 @@ class _WorkerRuntime:
                 if self.recovery is not None:
                     self.recovery.completed(request_id)
             elif item.phase == "Prefill":
-                self.active.append(request_id)
+                if self.config.role == "P":
+                    # 【PD重点】首token已经记入原历史；剩余输出等KV传到D，不留在P的active。
+                    assert self.on_prefill_ready is not None
+                    self.on_prefill_ready(request_id, self.now_ms)
+                else:
+                    self.active.append(request_id)
         # 【混合完成重点】只轮转本轮实际Decode成员，新进入active的Prefill不算已服务。
         served_decode = tuple(item.request_id for item in event.plan.items if item.phase == "Decode")
         if served_decode:
@@ -349,8 +359,9 @@ class _WorkerRuntime:
         self.trace.append(f"  启动 {phase} {list(members)}；注册 {end_ms:g}ms 完成通知")
 
     def finish(self) -> EventRun:
-        completed = tuple(item for item in self.ordered if len(self.token_times[item.request_id]) == item.output_tokens)
-        pending = tuple(item.request_id for item in self.ordered if len(self.token_times[item.request_id]) < item.output_tokens)
+        owned = tuple(item for item in self.ordered if item.request_id not in self.departed)
+        completed = tuple(item for item in owned if len(self.token_times[item.request_id]) == item.output_tokens)
+        pending = tuple(item.request_id for item in owned if len(self.token_times[item.request_id]) < item.output_tokens)
         # 容量满时保留已完成结果与块表，不假装所有请求完成，也不无限安排唤醒事件。
         results = tuple(
             Result(item, tuple(self.records[item.request_id]), tuple(self.token_times[item.request_id]), self.starts[item.request_id])
@@ -366,7 +377,8 @@ class _WorkerRuntime:
 
 
 def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, ...],
-                   assignments: dict[str, str], predictor: Predictor | None = None) -> ClusterRun:
+                   assignments: dict[str, str], predictor: Predictor | None = None,
+                   pd_config: PDConfig | None = None) -> ClusterRun:
     """【多卡重点3】所有卡共用此处的future；不是分别跑完单卡后拼接结果。"""
     if not configs or len({worker.worker_id for worker in configs}) != len(configs):
         raise ValueError("workers必须非空且worker_id唯一")
@@ -379,6 +391,12 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
     worker_ids = {worker.worker_id for worker in configs}
     if any(not isinstance(owner, str) or owner not in worker_ids for owner in assignments.values()):
         raise ValueError("请求归属引用了不存在的worker")
+    if pd_config is not None:
+        pd_config.validate_workers(configs)
+        if any(owner != pd_config.prefill_worker for owner in assignments.values()):
+            raise ValueError("固定1P1D的请求必须先到P")
+    elif any(config.role != "Mix" for config in configs):
+        raise ValueError("独立多worker模式只接受Mix；P/D需要显式pd配置")
     future: list[_ScheduledEvent] = []
     sequence = 0
     execution_order: list[tuple[str, int]] = []
@@ -386,7 +404,8 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
     def schedule(worker_id: str, time_ms: float, kind: str, ids: tuple[str, ...], phase: str,
                  plan: BatchPlan | None, reservation: KVReservation | None) -> None:
         nonlocal sequence
-        priority = {"arrival": 0, "complete": 1, "wakeup": 2}[kind]
+        priority = {"arrival": 0, "complete": 1, "transfer_complete": 1,
+                    "wakeup": 2, "transfer_start": 2}[kind]
         heapq.heappush(future, _ScheduledEvent(time_ms, priority, sequence, kind, ids,
                                              phase, plan, reservation, worker_id))
         sequence += 1
@@ -397,12 +416,29 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
     states = {config.worker_id: _WorkerRuntime(config,
               tuple(request for request in requests if assignments[request.request_id] == config.worker_id),
               schedule, predictor) for config in configs}
+    handoff = None
+    if pd_config is not None:
+        def notify(time_ms: float, kind: str, request_id: str) -> None:
+            # start是链路唤醒，真正成员由FIFO队首决定，不能把触发者误当本次成员。
+            ids = () if kind == "transfer_start" else (request_id,)
+            schedule(pd_config.decode_worker, time_ms, kind, ids, "", None, None)
+        handoff = HandoffController(pd_config, states[pd_config.prefill_worker],
+                                     states[pd_config.decode_worker], notify)
+        states[pd_config.prefill_worker].on_prefill_ready = handoff.prefill_ready
     for request in sorted(requests, key=lambda item: item.arrival_ms):
         schedule(assignments[request.request_id], request.arrival_ms, "arrival",
                  (request.request_id,), "", None, None)
     trace: list[str] = []
     while future:
         event = heapq.heappop(future)
+        if event.kind in ("transfer_start", "transfer_complete"):
+            assert handoff is not None
+            trace.append(f"[link] {event.time_ms:g}ms 处理 {event.kind} {list(event.request_ids)}")
+            if event.kind == "transfer_start":
+                handoff.start_next(event.time_ms)
+            else:
+                handoff.complete(event.request_ids[0], event.time_ms)
+            continue
         state = states[event.worker_id]
         previous = len(state.trace)
         state.handle(event)
@@ -424,13 +460,20 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
         estimates.append(state.estimates[index])
     return ClusterRun(BatchRun(results, tuple(steps)), worker_runs, tuple(plans), tuple(estimates),
                       tuple(trace), tuple((request.request_id, assignments[request.request_id]) for request in ordered),
-                      "blocked" if pending else "completed", pending)
+                      "blocked" if pending else "completed", pending, pd_config,
+                      tuple(handoff.records) if handoff is not None else ())
 
 
 def simulate_workers(requests: tuple[Request, ...], workers: tuple[WorkerConfig, ...],
                      assignments: dict[str, str]) -> ClusterRun:
     """显式固定归属；一张卡容量阻塞不会结束其他卡的事件。"""
     return _drive_workers(requests, workers, assignments)
+
+
+def simulate_pd(requests: tuple[Request, ...], workers: tuple[WorkerConfig, ...], config: PDConfig) -> ClusterRun:
+    """固定1P1D：请求从P进入，首token后跨链路到D；不进行动态路由。"""
+    return _drive_workers(requests, workers, {request.request_id: config.prefill_worker for request in requests},
+                          pd_config=config)
 
 
 def simulate_events(

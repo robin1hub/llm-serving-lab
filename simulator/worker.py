@@ -12,7 +12,7 @@ from .scheduler import SchedulerProfile
 
 @dataclass(frozen=True)
 class WorkerConfig:
-    """【多卡重点1】描述一张完整Mix副本；动态队列在engine中另建。"""
+    """【多卡重点1】描述一张Mix/P/D逻辑卡；角色组合由运行入口进一步校验。"""
 
     worker_id: str
     gpu_id: str
@@ -32,8 +32,6 @@ class WorkerConfig:
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"worker.{name}必须是非空字符串")
         self.scheduler_profile.validate_role(self.role)
-        if self.role != "Mix":
-            raise ValueError("当前完整请求运行仅支持Mix；P/D需要后续KV传输与交接")
         if self.kv_config is not None and self.kv_config.gpu_id != self.gpu_id:
             raise ValueError("worker.gpu_id与其KV池gpu_id必须一致")
         if self.recovery_config.capacity_policy == "preempt" and self.kv_config is None:

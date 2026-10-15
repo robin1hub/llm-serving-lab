@@ -13,6 +13,7 @@ from .kv_cache import KVConfig
 from .memory_budget import MemoryBudget, MemoryDevice, MemoryModel, MemorySettings, resolve_budget
 from .recovery import RecoveryConfig
 from .worker import WorkerConfig
+from .handoff import LinkConfig, PDConfig
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class Experiment:
     recovery_config: RecoveryConfig = RecoveryConfig()
     workers: tuple[WorkerConfig, ...] = ()
     assignments: tuple[tuple[str, str], ...] = ()
+    pd_config: PDConfig | None = None
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -79,7 +81,7 @@ def load_experiment(path: Path) -> Experiment:
     config_path = path.resolve()
     raw = _fields(_read_json(config_path), {"workload"}, "config",
                   {"timing", "predictor", "kv_cache", "recovery", "scheduler",
-                   "scheduler_profiles", "workers", "routing"})
+                   "scheduler_profiles", "workers", "routing", "pd"})
     if "scheduler" in raw and ("workers" in raw or "scheduler_profiles" in raw):
         raise ValueError("scheduler与scheduler_profiles/workers不能混用")
     if "predictor" in raw and isinstance(raw["predictor"], dict):
@@ -96,7 +98,7 @@ def load_experiment(path: Path) -> Experiment:
     parsed: list[WorkerConfig] = []
     first: Experiment | None = None
     for index, entry in enumerate(entries):
-        local = {key: value for key, value in raw.items() if key != "routing"}
+        local = {key: value for key, value in raw.items() if key not in ("routing", "pd")}
         gpu_id = None
         if entry is not None:
             spec = _fields(entry, {"id", "role", "scheduler_profile"}, f"workers[{index}]",
@@ -134,7 +136,18 @@ def load_experiment(path: Path) -> Experiment:
     if len({worker.gpu_id for worker in parsed}) != len(parsed):
         raise ValueError("当前各worker必须使用不同gpu_id")
     assert first is not None
-    if "routing" in raw:
+    pd_config = None
+    if "pd" in raw:
+        if "routing" in raw:
+            raise ValueError("固定pd模式不能同时配置routing")
+        spec = _fields(raw["pd"], {"prefill_worker", "decode_worker", "link"}, "pd")
+        link = _fields(spec["link"], {"bandwidth_bytes_per_s", "latency_ms", "kv_bytes_per_token"}, "pd.link")
+        pd_config = PDConfig(spec["prefill_worker"], spec["decode_worker"], LinkConfig(**link))
+        pd_config.validate_workers(tuple(parsed))
+        assignments = {request.request_id: pd_config.prefill_worker for request in first.requests}
+    elif any(worker.role != "Mix" for worker in parsed):
+        raise ValueError("完整P/D运行需要显式固定pd配置")
+    elif "routing" in raw:
         routing = _fields(raw["routing"], {"policy", "assignments"}, "routing")
         if routing["policy"] != "fixed" or not isinstance(routing["assignments"], dict):
             raise ValueError("当前routing只支持fixed与显式assignments对象")
@@ -148,7 +161,7 @@ def load_experiment(path: Path) -> Experiment:
     worker_ids = {worker.worker_id for worker in parsed}
     if any(not isinstance(owner, str) or owner not in worker_ids for owner in assignments.values()):
         raise ValueError("固定归属表引用了不存在的worker")
-    return replace(first, workers=tuple(parsed), assignments=tuple(assignments.items()))
+    return replace(first, workers=tuple(parsed), assignments=tuple(assignments.items()), pd_config=pd_config)
 
 
 def _load_single_experiment(path: Path, raw_config: dict,
@@ -226,8 +239,6 @@ def _load_single_experiment(path: Path, raw_config: dict,
             raise ValueError("worker 引用了不存在的 scheduler_profile")
         profile = parsed_profiles[profile_name]
         profile.validate_role(worker_role)
-        if worker_role != "Mix":
-            raise ValueError("当前完整请求运行仅支持 Mix worker；P/D 需要后续 P→D 交接机制")
         scheduler_config = profile.constraints
     # 【预测重点】算法不决定耗时来源；两个来源互斥，避免参数被悄悄忽略。
     predictor = _fields(raw.get("predictor", {"kind": "teaching"}), {"kind"}, "predictor",
