@@ -36,6 +36,7 @@ python3 run_simulation.py --config configs/basic.json
 python3 run_simulation.py --config configs/decode_first.json --output output/decode.json
 python3 run_simulation.py --config configs/two_mix_workers.json --output output/two_mix_workers.json
 python3 run_simulation.py --config configs/one_p_one_d.json --output output/one_p_one_d.json
+python3 run_simulation.py --config configs/pd_capacity_wait.json --output output/pd_capacity_wait.json
 python3 -m unittest discover -s tests -q
 ```
 
@@ -71,9 +72,10 @@ Python 3.10+，基础模拟仅标准库。ShareGPT 数据准备使用本项目 .
 20. [A6000受控混合验证](docs/chapters/20-a6000-mixed.md)：换硬件后的独立纯P/D拟合、1P+多D实验与验收。
 21. [多worker事件模拟](docs/chapters/21-multi-workers.md)：两张Mix卡并行、独立状态、共享事件堆与固定归属。
 22. [固定1P1D与传输](docs/chapters/22-fixed-pd.md)：首token、KV载荷、FIFO链路、目标就绪与D排队。
+23. [交接容量等待](docs/chapters/23-handoff-capacity-wait.md)：目标放不下时FIFO等待、容量释放唤醒、源KV背压与blocked诊断。
 
-现在先读[第22章](docs/chapters/22-fixed-pd.md)：P在8ms产生首token，KV在8–13ms传输，D在15/17ms输出。路线第2阶段已完成，目标容量不足时的等待协议仍待第3阶段。第21章的独立Mix例子保留：A在卡0于8/10/12ms输出，B在卡1于4/6ms输出。详细路线见[ROADMAP](docs/ROADMAP.md)。
+现在先读[第23章](docs/chapters/23-handoff-capacity-wait.md)：B在16ms产首token，目标KV放不下而等待；17ms A完成释放后，B传输17–22ms，在24ms继续输出。固定1P1D容量等待已实现，目标不变，不做重新路由。第21/22章的独立Mix和容量充足的PD例子保留。详细路线见[ROADMAP](docs/ROADMAP.md)。
 
 此前完成[第20章：A6000受控混合验证](docs/chapters/20-a6000-mixed.md)。直接使用A6000本地Qwen2.5-3B基础版，独立纯P/D拟合后冻结参数，9组1P+1/3/7D共180个目标轮的平均误差28.80%→5.64%，最大10.35%；未用混合数据调参。纯P/D的4组留出平均8.08%，P256仍高估21.40%。GPU已释放，没有拷贝/下载权重，环境、报告、代码讲解和交接均已保存。该结论只覆盖本次模型/硬件/同步eager执行轮，不代表请求级TTFT或所有混合组合。默认配置不变，当前契约见[ARCHITECTURE](docs/ARCHITECTURE.md)，历史4090结果见第18/19章。
 
-当前支持ShareGPT单轮负载、人数/token预算、Prefill分块、阶段交替、混合batch、KV分页准入、Mix抢占/重算，以及独立多Mix与固定1P1D。PD暂不支持抢占或目标容量等待。4090/A6000校准仅覆盖对应报告范围，多卡请求级和链路精度未验证。完整历史见[学习日志](docs/LEARNING_LOG.md)，继续工作先读[交接](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md)、[路线](docs/ROADMAP.md)和AGENTS.md。
+当前支持ShareGPT单轮负载、人数/token预算、Prefill分块、阶段交替、混合batch、KV分页准入、Mix抢占/重算，以及独立多Mix、固定1P1D与目标容量等待。PD仍不支持抢占、动态路由或D→P迁移；后续Decode增长也可能blocked。4090/A6000校准仅覆盖对应报告范围，多卡请求级和链路精度未验证。完整历史见[学习日志](docs/LEARNING_LOG.md)，继续工作先读[交接](docs/HANDOFF.md)、[架构契约](docs/ARCHITECTURE.md)、[路线](docs/ROADMAP.md)和AGENTS.md。

@@ -151,7 +151,7 @@ PD输出仍使用schema_version=2，execution_mode=fixed_1p1d，增加pd和trans
 
 - 需要恰好一P一D、不同GPU、各自启用KV，PD抢占明确拒绝。
 - FIFO传输按整段串行，链路与两卡计算可重叠；未模拟共享HBM/PCIe/CPU争用。
-- 开始传输时D放不下完整输入，会明确报错，不静默跳过或伪造完成；没有目标容量等待队列/恢复策略。这是路线第3阶段的内容。
+- 本章最初版本对目标容量不足报错；后续[第23章](23-handoff-capacity-wait.md)已替换为FIFO容量等待与释放唤醒，当前行为以第23章为准。
 - 已进入D后的Decode增长仍按原KV准入规则，无法增长时可能blocked；不承诺所有输入都能完成。
 - 没有多P多D、动态路由、共享prefix/COW、增量流式传输或真实多卡精度保证。
 

@@ -114,6 +114,8 @@ def cluster_report(experiment: Experiment, run: ClusterRun) -> dict:
         report["pd"] = asdict(run.pd_config)
         report["routing"]["policy"] = "fixed_1p1d"
         report["transfers"] = [asdict(record) for record in run.transfers]
+        report["capacity_waits"] = [{**asdict(record), "wait_ms": record.wait_ms}
+                                    for record in run.capacity_waits]
         for row in report["requests"]:
             row["worker_path"] = ([run.pd_config.prefill_worker, run.pd_config.decode_worker]
                                   if row["worker_id"] == run.pd_config.decode_worker
@@ -158,7 +160,12 @@ def main() -> None:
         for transfer in run.transfers:
             print(f"[KV {transfer.source_worker}→{transfer.target_worker}] "
                   f"{transfer.start_ms:g}–{transfer.end_ms:g}ms {transfer.request_id}，"
-                  f"{transfer.payload_bytes}字节，链路等待{transfer.start_ms - transfer.ready_ms:g}ms")
+                  f"{transfer.payload_bytes}字节，交接总等待{transfer.start_ms - transfer.ready_ms:g}ms")
+        for wait in run.capacity_waits:
+            end = f"{wait.end_ms:g}" if wait.end_ms is not None else "未恢复"
+            print(f"[目标KV等待] {wait.request_id} {wait.start_ms:g}→{end}ms，"
+                  f"{wait.status}，{wait.reason}，需要{wait.required_blocks}块，"
+                  f"开始时空闲{wait.free_blocks_at_start}块，观察等待{wait.wait_ms:g}ms")
     if not args.summary:
         print("计划工作量（本轮处理 token 数；Prefill/Recompute range_start 是序列偏移）：")
         for index, plan in enumerate(run.plans):

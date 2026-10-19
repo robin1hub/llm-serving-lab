@@ -1,6 +1,6 @@
 # 当前架构与代码契约
 
-本文件是当前实现地图，供用户和后续 AI 快速定位。更新日期2026-10-15。当前支持多个独立Mix worker及固定1P1D/FIFO链路，学习说明见第21/22章，路线见ROADMAP.md。单卡旧接口保留；目标容量不足的交接等待协议尚未实现。第15章以后的补充按历史阶段追加，早期未实现说明以最新章节为准；实测范围见第18/20章及摘要报告。
+本文件是当前实现地图，供用户和后续 AI 快速定位。更新日期2026-10-19。当前支持多个独立Mix worker、固定1P1D/FIFO链路及目标容量等待，学习说明见第21–23章，路线见ROADMAP.md。单卡旧接口保留；动态路由/D→P迁移尚未实现。第15章以后的补充按历史阶段追加，早期未实现说明以最新章节为准；实测范围见第18/20章及摘要报告。
 
 ## 模块地图
 
@@ -101,7 +101,7 @@ TTFT包含全部输入块与期间等待。统计P50/P95用最近秩，ITL按所
 
 ## 明确尚未实现
 
-共享KV/COW/通用传输pin、模拟容量公式与实际池大小的系统对齐、CPU交换、SLO优化、交接目标容量等待/PD抢占、多P多D、动态路由、TP/PP、失败/取消/截止终止。已有最小固定1P1D传输，但未模拟共享带宽或真实链路争用；多卡请求级精度未验证。真实模型执行仅用于独立采集工具。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
+共享KV/COW/通用传输pin、模拟容量公式与实际池大小的系统对齐、CPU交换、SLO优化、PD抢占、多P多D、动态路由、D→P迁移、TP/PP、失败/取消/截止终止。已有固定1P1D传输与容量等待，但未模拟共享带宽或真实链路争用；多卡请求级精度未验证。真实模型执行仅用于独立采集工具。分块本身不会自动让Decode获得运行机会，需要启用交替等策略。
 
 ## 验证与交接入口
 
@@ -112,7 +112,7 @@ python3 run_simulation.py --config configs/token_budget.json --output output/tok
 
 test_profiles.py检查方案/角色绑定、交替状态、手算时间与旧配置兼容；test_token_budget.py检查范围、首token、限制与进度；test_scheduler.py检查只读选批与轮转；test_engine.py检查事件边界/互斥；test_config/test_dataset/test_metrics分别守住输入、分词和口径。依赖缺失的分词集成明确skip。
 
-下一AI先确认git status，读取HANDOFF/本页/ROADMAP/第22章。当前完成路线第2阶段，用户理解尚未确认，不自动继续目标容量等待。test_pd验证交接/载荷/复制计算重叠/边界，test_multi_worker验证独立卡，test_predictor验证公式。只在教学项目工作，不修改师兄项目或全局环境。资产/生成结果被Git忽略。
+下一AI先确认git status，读取HANDOFF/本页/ROADMAP/第23章。当前固定PD等待已完成，用户理解尚未确认，不自动继续路由或迁移。test_pd验证交接/载荷/容量等待/背压/blocked边界，test_multi_worker验证独立卡，test_predictor验证公式。只在教学项目工作，不修改师兄项目或全局环境。资产/生成结果被Git忽略。
 
 ## 第11章混合执行补充
 
@@ -220,6 +220,16 @@ PD模式复用同一全局堆。P最终Prefill完成先产首token；若已满�
 
 载荷=已处理输入KV token数×kv_bytes_per_token，不包含刚生成首token，不包含尾页空位；耗时=latency_ms+payload_bytes/bandwidth_bytes_per_s×1000。串行链路可与两卡计算重叠，允许不同请求在D池并行写入；同一请求写入事务互斥。传输不调用Predictor、不增加计算steps，单独保存TransferRecord。PD请求输出的worker_id为最终完成卡，worker_path记录路径；workers的produced_output_tokens是本卡实际产出，summary仍按完整已完成请求汇总。
 
-开始拷入若目标容量不够明确ValueError，未实现目标等待队列/PD抢占；D后续增长沿用原准入，可能blocked。P若因保留源KV而容量受阻，传输释放后会被唤醒。目标Ready只在完成事件提交，源在此前持续保留。PD双方需独立KV池/相容模型，独立多Mix模式不接受P/D角色，pd与routing互斥。链路与多卡请求级结果均未实测校准。
+第22章初版在目标容量不够时ValueError；第23章已替换为FIFO容量等待，PD抢占仍未实现。D后续增长沿用原准入，可能blocked。P若因保留源KV而容量受阻，传输释放后会被唤醒。目标Ready只在完成事件提交，源在此前持续保留。PD双方需独立KV池/相容模型，独立多Mix模式不接受P/D角色，pd与routing互斥。链路与多卡请求级结果均未实测校准。
 
 one_p_one_d示例：P0–8首token8，4096bytes传输8–13，D13–15/15–17，输出8/15/17，ITL7/2ms。106测试104通过2跳过（13项PD），basic/kv_blocks/recompute/two_mix_workers四个CLI完整JSON均保持。第22章含状态/时序图、结构表、手算和边界，路线第2阶段完成；下一步先讨论结果，不自动推进第3阶段。
+
+## 第23章：固定目标容量等待契约
+
+HandoffController.queue严格FIFO。链路空闲时start_next检查队首完整输入KV所需新增块；放不下不reserve、不popleft、不释放源、不添加D.active。wait_records保存冻结CapacityWaitRecord，waiting_index定位当前队首，start_pending合并链路检查事件。新请求到来不重复探测已阻塞队首；目标空闲块实际增加后才触发capacity_released。engine在处理D事件前后比较free_blocks，通知被安排为同刻优先级2的transfer_start，重新核验最新容量后才启动事务。当前只有D完成释放能增加目标空闲块，不引入通用generation或定时轮询。
+
+容量足够时按原reserve→Populating→传输→Ready→源释放流程，等待记录改resumed，end_ms为开始复制时刻。两端原请求历史继续复用，等待会进入真实ITL。queue严格FIFO，永久超容量的队首也不绕过，记录impossible/request_exceeds_target_capacity，仍保留源KV和pending；没有通用请求失败/取消流程。暂时不足且事件耗尽则waiting/blocked，end_ms=null，observed_until_ms为最后事件时间。未完成请求不计入完成summary，不伪造传输或输出。
+
+ClusterRun新增capacity_waits，PD JSON schema2对应导出并增加wait_ms；非PD JSON保持不变。TransferRecord仍只表示实际复制。start_ms-ready_ms为含容量等待的交接总等待，CLI不再称纯链路等待。源等待KV可能反压P，复制结束释放后唤醒。输入可接纳不保证后续D增长，仍可能blocked。
+
+pd_capacity_wait示例A4/3、B4/2同时到达，D3块×2token：A输出8/15/17，B16/24；B16–17等容量，17–22复制，24续输出。112测试110通过2跳过，PD专项19项；容量恢复/无目标预占/源保留/FIFO/背压/永久不足/无未来释放/观察截止/CLI均验证。四个旧CLI完整JSON仍与output/pd-regression一致。详细流程、状态、结构、阅读标记和手算见第23章；本次不新增路由或迁移，不访问服务器。

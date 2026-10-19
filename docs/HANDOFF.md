@@ -1,14 +1,26 @@
 # 项目交接：当前状态
 
-更新时间：2026-10-15（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
+组会材料（2026-10-16）：[GROUP_MEETING_OUTLINE.md](GROUP_MEETING_OUTLINE.md)，5页约5分钟，聚焦模拟器目标、架构、单卡机制、固定PD时间线与校准边界，每页附讲稿。仅整理文档，运行实现仍为第22章。
 
-最新结果：路线第2阶段固定1P1D已实现，P产生首token后经FIFO链路交接KV到D；源保留、目标Ready、源释放边界已验证，但目标容量不足的等待/PD抢占尚未实现。第22章、ROADMAP与本页末尾为当前进度。第21章独立多Mix和第20章A6000校准保留；旧阶段未实现说明以最新记录为准。
+简短进度版：[PROGRESS_2026-10-16.md](PROGRESS_2026-10-16.md)，按用户示例使用日期和三项分点，可直接用于组会进度汇报。
+
+更新时间：2026-10-19（Asia/Hong_Kong）。公开仓库：https://github.com/robin1hub/llm-serving-lab 。
+
+最新结果：固定1P1D的目标容量等待已实现，见[第23章](chapters/23-handoff-capacity-wait.md)。目标仍固定D，FIFO队首放不下时保留源KV、不预占目标，D释放块后唤醒重试；永久放不下记录impossible，或无事件可推进时保留pending并blocked。没有动态路由/D→P迁移/PD抢占。第21/22章基础和第20章A6000校准保留；历史未实现说明以最新记录为准。
 
 最新研究交接：[D_HEAVY_RESEARCH_BRIEF.md](D_HEAVY_RESEARCH_BRIEF.md)已整理“D-heavy时哪些D迁到P、哪个P接收、迁多少”的自包含报告。师兄建议是**零阶优化**，不是零和；尚需确认泛指黑盒调参还是特指扰动梯度估计，以及离线/在线范围。报告含原始文献、已核对深度、指标、实现缺口、实验草案和下一session可复制任务。当前只授权整理报告；没有实现D→P或搜索器，也没有创建/联系其他session。
 
 ## 先读与协作要求
 
-AGENTS.md → 本页 → ARCHITECTURE.md → ROADMAP.md → 第22章22-fixed-pd.md（第21章是多卡基础）→ 对应代码和测试。校准背景见第18–20章。LEARNING_LOG保留历史，不能当作当前未实现列表。
+### 2026-10-19本步交接
+
+本轮授权只做目标不变的容量等待/重试。核心改动handoff.py的CapacityWaitRecord/wake_link/capacity_released/start_next，engine.py比较D事件前后free_blocks并通知，run_simulation.py新增PD专用capacity_waits。固定FIFO，不预占等待请求的目标块；源KV保留到复制完成。队首永久超过目标总容量时impossible且不再重试，仍保留源KV/pending并阻止后续越队；没有请求失败清理。暂时不足但D增长也被卡住时，事件耗尽后blocked。
+
+可运行`python3 run_simulation.py --config configs/pd_capacity_wait.json --output output/pd_capacity_wait.json`：A8/15/17，B16/24；B16–17等容量、17–22复制。capacity_waits记录start/end/观察截止/需要及首次空闲块数/reason/status/wait_ms；未恢复end=null，不冒充成功。交接总等待含容量等待，不再误称纯链路等待。源端背压、严格FIFO、永久不足、无释放、未恢复观察/其他请求继续、CLI状态均有测试。
+
+验证WSL2 Python3：112测试110通过2跳过，PD专项19项；basic/kv_blocks/recompute/two_mix_workers四例与旧output/pd-regression完整JSON一致，现结果在ignored output/capacity-wait-regression。新增示例结果output/pd_capacity_wait.json。第23章及README/ARCHITECTURE/ROADMAP/学习日志已同步。等待恢复沿用原交接事务，不是重算、重新路由或D→P迁移。未连接服务器/占GPU，未改师兄项目/全局依赖，旧8B取消实验草稿保持未提交。用户理解待确认，先读图与手算，再决定下一步。
+
+AGENTS.md → 本页 → ARCHITECTURE.md → ROADMAP.md → 第23章23-handoff-capacity-wait.md（第21/22章为基础）→ 对应代码和测试。校准背景见第18–20章。LEARNING_LOG保留历史，不能当作当前未实现列表。
 
 用户首要目标是理解LLM serving与D端压力，代码基础较弱；要中文原因注释、编号阅读重点、流程图、结构表与手算。用户希望保留师兄块身份/状态等设计以扩展多卡多state，不能仅计总容量。小步实现，用户已同意并完成最小实测及完整硬件矩阵，已完成限定范围拟合和新形状验证，不自动启用共享/COW/传输或部署服务。只改本项目，不改师兄项目、服务器和全局依赖。
 

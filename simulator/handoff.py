@@ -1,4 +1,4 @@
-"""固定1P1D的串行链路与交接；不包含目标容量不足后的等待/恢复策略。"""
+"""固定1P1D的串行链路、FIFO容量等待与事件驱动重试；见第23章。"""
 
 from collections import deque
 from dataclasses import dataclass, replace
@@ -95,6 +95,24 @@ class TransferRecord:
     status: str = "in_flight"
 
 
+@dataclass(frozen=True)
+class CapacityWaitRecord:
+    """【等待重点1】等待不是传输；未恢复时end_ms为空，观察截止也单独保留。"""
+
+    request_id: str
+    start_ms: float
+    end_ms: float | None
+    observed_until_ms: float
+    required_blocks: int
+    free_blocks_at_start: int
+    reason: str
+    status: str = "waiting"
+
+    @property
+    def wait_ms(self) -> float:
+        return self.observed_until_ms - self.start_ms
+
+
 class HandoffController:
     """【交接重点2】队列等待与链路执行分开；传输期间请求不能进入D的active。"""
 
@@ -106,6 +124,26 @@ class HandoffController:
         self.records: list[TransferRecord] = []
         self.active: TransferRecord | None = None
         self.reservation: KVReservation | None = None
+        self.wait_records: list[CapacityWaitRecord] = []
+        self.waiting_index: int | None = None
+        self.start_pending = False
+
+    def wake_link(self, now_ms: float) -> None:
+        # 【等待重点2】同刻多次释放只安排一次检查；链路忙时由传输完成负责接棒。
+        if self.active is None and self.queue and not self.start_pending:
+            self.start_pending = True
+            self.notify(now_ms, "transfer_start", self.queue[0][0])
+
+    def capacity_released(self, now_ms: float) -> None:
+        # 只有已经容量阻塞的队首需要容量通知，普通链路排队无需额外事件。
+        if (self.waiting_index is not None
+                and self.wait_records[self.waiting_index].status == "waiting"):
+            self.wake_link(now_ms)
+
+    def snapshot_waits(self, now_ms: float) -> tuple[CapacityWaitRecord, ...]:
+        # 堆耗尽不等于等待结束：仍保留waiting和空end_ms，不能伪造成功。
+        return tuple(replace(record, observed_until_ms=now_ms)
+                     if record.status == "waiting" else record for record in self.wait_records)
 
     def prefill_ready(self, request_id: str, now_ms: float) -> None:
         source, target = self.source, self.target
@@ -121,9 +159,12 @@ class HandoffController:
         source.departed.add(request_id)
         target.records[request_id].append(Event(now_ms, "P完成，等待KV链路；D尚不可执行"))
         self.queue.append((request_id, now_ms))
-        self.notify(now_ms, "transfer_start", request_id)
+        # 新请求到来不反复探测已经阻塞的队首；释放容量才可能改变结果。
+        if self.waiting_index is None:
+            self.wake_link(now_ms)
 
     def start_next(self, now_ms: float) -> None:
+        self.start_pending = False
         if self.active is not None or not self.queue:
             return
         request_id, ready_ms = self.queue[0]
@@ -131,13 +172,26 @@ class HandoffController:
         assert source.kv_pool is not None and target.kv_pool is not None
         tokens = source.kv_pool.cached_tokens(request_id)
         assert tokens == source.by_id[request_id].input_tokens
+        required_blocks = target.kv_pool.additional_blocks(request_id, tokens)
+        if required_blocks > target.kv_pool.free_blocks:
+            if self.waiting_index is None:
+                # 【等待重点3】不reserve、不取走队首、不安排定时轮询；源KV原样保留。
+                impossible = required_blocks > target.kv_pool.config.total_blocks
+                reason = "request_exceeds_target_capacity" if impossible else "temporary_capacity"
+                self.waiting_index = len(self.wait_records)
+                self.wait_records.append(CapacityWaitRecord(
+                    request_id, now_ms, None, now_ms, required_blocks,
+                    target.kv_pool.free_blocks, reason, "impossible" if impossible else "waiting"))
+                message = ("目标KV总容量不足，无法交接" if impossible else "目标KV暂时不足，等待释放")
+                target.records[request_id].append(Event(now_ms, message))
+                target.record_kv(now_ms, f"transfer_capacity_wait:{request_id}")
+                source.record_kv(now_ms, f"transfer_source_wait_held:{request_id}")
+            return
         payload = tokens * self.config.link.kv_bytes_per_token
         end_ms = now_ms + self.config.link.duration_ms(payload)
         _validate_time("KV传输完成时间", end_ms, allow_zero=False)
         if end_ms <= now_ms:
             raise ValueError("KV传输时间过小，无法推进模拟时钟")
-        if target.kv_pool.additional_blocks(request_id, tokens) > target.kv_pool.free_blocks:
-            raise ValueError("本阶段PD仅支持容量充足的交接：目标KV容量不足，尚未实现交接等待协议")
         # 复用块池的写入事务；这是数据拷入，不是再做一次Prefill计算。
         plan = BatchPlan((ReadyTask(request_id, "Prefill", tokens),), "KV传输目标预留")
         reservation = target.kv_pool.reserve(plan)
@@ -148,6 +202,13 @@ class HandoffController:
             target.kv_pool.rollback(reservation)
             raise
         target.record_kv(now_ms, f"transfer_populating:{request_id}")
+        if self.waiting_index is not None:
+            record = self.wait_records[self.waiting_index]
+            assert record.request_id == request_id and record.status == "waiting"
+            self.wait_records[self.waiting_index] = replace(
+                record, end_ms=now_ms, observed_until_ms=now_ms, status="resumed")
+            self.waiting_index = None
+            target.records[request_id].append(Event(now_ms, "目标容量满足，恢复KV交接"))
         self.queue.popleft()
         self.active = TransferRecord(request_id, source.config.worker_id, target.config.worker_id,
                                      ready_ms, now_ms, end_ms, tokens, payload)
@@ -174,4 +235,4 @@ class HandoffController:
         source.now_ms = target.now_ms = now_ms
         source.wake_scheduler()
         target.wake_scheduler()
-        self.notify(now_ms, "transfer_start", request_id)
+        self.wake_link(now_ms)

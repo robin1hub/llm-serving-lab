@@ -6,7 +6,7 @@ import heapq
 from typing import Callable
 
 from .worker import WorkerConfig
-from .handoff import HandoffController, PDConfig, TransferRecord
+from .handoff import CapacityWaitRecord, HandoffController, PDConfig, TransferRecord
 from .models import BatchRun, BatchStep
 from .models import Event, Request, Result, Timing, _validate_time
 from .scheduler import BatchPlan, Policy, ReadyTask, Scheduler, SchedulerConfig, SchedulerProfile, SchedulingSnapshot, rotate_after_completion
@@ -79,6 +79,7 @@ class ClusterRun:
     pending_request_ids: tuple[str, ...]
     pd_config: PDConfig | None = None
     transfers: tuple[TransferRecord, ...] = ()
+    capacity_waits: tuple[CapacityWaitRecord, ...] = ()
 
 
 # schedule回调只负责把某张卡的未来通知放进全局堆，不推进时间。
@@ -429,8 +430,10 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
         schedule(assignments[request.request_id], request.arrival_ms, "arrival",
                  (request.request_id,), "", None, None)
     trace: list[str] = []
+    now_ms = 0.0
     while future:
         event = heapq.heappop(future)
+        now_ms = event.time_ms
         if event.kind in ("transfer_start", "transfer_complete"):
             assert handoff is not None
             trace.append(f"[link] {event.time_ms:g}ms 处理 {event.kind} {list(event.request_ids)}")
@@ -441,8 +444,14 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
             continue
         state = states[event.worker_id]
         previous = len(state.trace)
+        free_before = state.kv_pool.free_blocks if state.kv_pool is not None else 0
         state.handle(event)
         trace.extend(f"[{event.worker_id}] {line}" for line in state.trace[previous:])
+        # 【等待重点4】只响应目标池真实释放块；检查事件排在同刻全部完成事件之后。
+        # 本阶段没有swap/缓存回收，D容量只会在请求完成释放时增加，无需轮询。
+        if (handoff is not None and state is handoff.target and state.kv_pool is not None
+                and state.kv_pool.free_blocks > free_before):
+            handoff.capacity_released(now_ms)
     worker_runs = tuple(WorkerRun(config, states[config.worker_id].finish()) for config in configs)
     results_by_id = {result.request.request_id: result for worker in worker_runs for result in worker.run.batch_run.results}
     ordered = sorted(requests, key=lambda item: item.arrival_ms)
@@ -461,7 +470,8 @@ def _drive_workers(requests: tuple[Request, ...], configs: tuple[WorkerConfig, .
     return ClusterRun(BatchRun(results, tuple(steps)), worker_runs, tuple(plans), tuple(estimates),
                       tuple(trace), tuple((request.request_id, assignments[request.request_id]) for request in ordered),
                       "blocked" if pending else "completed", pending, pd_config,
-                      tuple(handoff.records) if handoff is not None else ())
+                      tuple(handoff.records) if handoff is not None else (),
+                      handoff.snapshot_waits(now_ms) if handoff is not None else ())
 
 
 def simulate_workers(requests: tuple[Request, ...], workers: tuple[WorkerConfig, ...],

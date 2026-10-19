@@ -111,11 +111,110 @@ class PDTests(unittest.TestCase):
         self.assertEqual(run.transfers[0].ready_ms, 8)
         self.assertEqual([s.phase for s in run.batch_run.steps], ["Prefill", "Prefill", "Decode", "Decode"])
 
-    def test_destination_shortage_is_rejected_not_silently_skipped(self) -> None:
+    def test_impossible_destination_is_reported_without_losing_source_kv(self) -> None:
         p, d = self.config.workers
         d = replace(d, kv_config=KVConfig(d.gpu_id, 1, 2))
-        with self.assertRaisesRegex(ValueError, "目标KV容量不足"):
-            self.simulate(workers=(p, d))
+        run = self.simulate(workers=(p, d))
+        self.assertEqual((run.status, run.pending_request_ids, run.transfers), ("blocked", ("A",), ()))
+        wait, = run.capacity_waits
+        self.assertEqual((wait.reason, wait.status, wait.required_blocks),
+                         ("request_exceeds_target_capacity", "impossible", 2))
+        self.assertIsNone(wait.end_ms)
+        source, target = [worker.run for worker in run.workers]
+        self.assertEqual(source.kv_final.tables[0].cached_tokens, 4)
+        self.assertEqual(target.kv_final.blocks, ())
+        self.assertEqual(target.pending_progress[0].token_times_ms, (8,))
+
+    def test_capacity_wait_resumes_on_release_and_preserves_original_history(self) -> None:
+        p, d = self.config.workers
+        d = replace(d, kv_config=KVConfig(d.gpu_id, 3, 2))
+        run = self.simulate((Request("A", 0, 4, 3), Request("B", 0, 4, 2)), workers=(p, d))
+        self.assertEqual(run.status, "completed")
+        self.assertEqual([r.token_times_ms for r in run.batch_run.results], [(8, 15, 17), (16, 24)])
+        self.assertEqual([r.start_ms for r in run.batch_run.results], [0, 8])
+        self.assertEqual([(t.start_ms, t.end_ms) for t in run.transfers], [(8, 13), (17, 22)])
+        wait, = run.capacity_waits
+        self.assertEqual((wait.request_id, wait.start_ms, wait.end_ms, wait.wait_ms, wait.status),
+                         ("B", 16, 17, 1, "resumed"))
+        source, target = [worker.run for worker in run.workers]
+        held = next(r for r in source.kv_records if r.action == "transfer_source_wait_held:B")
+        self.assertEqual([(t.request_id, t.cached_tokens) for t in held.snapshot.tables], [("B", 4)])
+        waiting = next(r for r in target.kv_records if r.action == "transfer_capacity_wait:B")
+        self.assertTrue(all("B" not in b.request_refs for b in waiting.snapshot.blocks))
+        self.assertEqual(next(r.time_ms for r in source.kv_records
+                              if r.action == "transfer_source_release:B"), 22)
+        self.assertEqual([w.run.kv_final.free_blocks for w in run.workers], [16, 3])
+
+    def test_no_release_leaves_waiting_and_decode_growth_blocked_without_polling(self) -> None:
+        p, d = self.config.workers
+        d = replace(d, kv_config=KVConfig(d.gpu_id, 2, 2))
+        run = self.simulate((Request("A", 0, 4, 3), Request("B", 0, 4, 2)), workers=(p, d))
+        self.assertEqual((run.status, run.pending_request_ids), ("blocked", ("A", "B")))
+        wait, = run.capacity_waits
+        self.assertEqual((wait.request_id, wait.status, wait.reason), ("B", "waiting", "temporary_capacity"))
+        self.assertIsNone(wait.end_ms)
+        self.assertEqual(len(run.transfers), 1)
+        # 不生成每毫秒一次的重试，也不靠零时间事件无限推进。
+        self.assertLess(len(run.trace), 60)
+        self.assertEqual(len([r for r in run.workers[1].run.kv_records
+                              if r.action == "transfer_capacity_wait:B"]), 1)
+
+    def test_capacity_wait_backpressures_prefill_until_copy_releases_source(self) -> None:
+        p, d = self.config.workers
+        p = replace(p, kv_config=KVConfig(p.gpu_id, 4, 2))
+        d = replace(d, kv_config=KVConfig(d.gpu_id, 3, 2))
+        run = self.simulate(tuple(Request(name, 0, 4, 2 if name != "A" else 3)
+                                  for name in ("A", "B", "C", "D")), workers=(p, d))
+        self.assertEqual(run.status, "completed")
+        results = {r.request.request_id: r for r in run.batch_run.results}
+        # B等待时持有2块；P执行C时满4块。22ms复制释放空间，但P忙到24ms，D才开始。
+        self.assertEqual((results["C"].start_ms, results["D"].start_ms), (16, 24))
+        self.assertTrue(all(record.status == "resumed" for record in run.capacity_waits))
+
+    def test_smaller_request_cannot_bypass_fifo_capacity_head(self) -> None:
+        p, d = self.config.workers
+        p = replace(p, timing=replace(p.timing, prefill_ms_per_input_token=0.25))
+        d = replace(d, kv_config=KVConfig(d.gpu_id, 4, 2))
+        run = self.simulate((Request("A", 0, 4, 3), Request("B", 0, 6, 2),
+                             Request("C", 0, 2, 2)), workers=(p, d))
+        self.assertEqual(run.status, "completed")
+        self.assertEqual([(t.request_id, t.start_ms, t.end_ms) for t in run.transfers],
+                         [("A", 1, 6), ("B", 10, 17), ("C", 19, 22)])
+        # 6ms有1块空闲，C只要1块却不能越过需要3块的B。
+        first = run.capacity_waits[0]
+        self.assertEqual((first.request_id, first.start_ms, first.end_ms,
+                          first.required_blocks, first.free_blocks_at_start), ("B", 6, 10, 3, 1))
+        self.assertEqual([r.token_times_ms for r in run.batch_run.results],
+                         [(1, 8, 10), (2.5, 19), (3, 24)])
+
+    def test_unresolved_wait_observation_does_not_pretend_it_resumed(self) -> None:
+        p, d = self.config.workers
+        d = replace(d, kv_config=KVConfig(d.gpu_id, 2, 2))
+        run = self.simulate((Request("A", 0, 4, 3), Request("B", 0, 4, 2),
+                             Request("C", 100, 1, 1)), workers=(p, d))
+        self.assertEqual(run.pending_request_ids, ("A", "B"))
+        self.assertEqual([r.request.request_id for r in run.batch_run.results], ["C"])
+        wait, = run.capacity_waits
+        self.assertEqual((wait.start_ms, wait.observed_until_ms, wait.wait_ms), (16, 102, 86))
+        self.assertEqual(wait.status, "waiting")
+        self.assertIsNone(wait.end_ms)
+
+    def test_cli_saves_blocked_capacity_wait_and_pending_first_token(self) -> None:
+        raw = json.loads((ROOT / "configs/one_p_one_d.json").read_text())
+        raw["workload"]["path"] = str(ROOT / "workloads/pd_request.json")
+        raw["workers"][1]["kv_cache"]["total_blocks"] = 1
+        with tempfile.TemporaryDirectory() as directory:
+            config, output = Path(directory) / "config.json", Path(directory) / "result.json"
+            config.write_text(json.dumps(raw))
+            completed = subprocess.run([sys.executable, str(ROOT / "run_simulation.py"), "--config",
+                                        str(config), "--output", str(output)], capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 2, completed.stderr)
+            report = json.loads(output.read_text())
+            self.assertEqual(report["status"], "blocked")
+            self.assertEqual(report["summary_scope"], "completed_requests_only")
+            self.assertEqual(report["capacity_waits"][0]["status"], "impossible")
+            self.assertEqual(report["pending_progress"][0]["token_times_ms"], [8])
+            self.assertIn("目标KV等待", completed.stdout)
 
     def test_real_model_geometry_checks_transfer_bytes(self) -> None:
         settings = load_experiment(ROOT / "configs/measure_a6000_qwen25_3b.json").predictor_settings
